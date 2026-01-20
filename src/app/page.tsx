@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,6 +65,17 @@ const programs = [
   },
 ];
 
+const venueLogos = [
+  {
+    src: "/images/BD%20logo%201.jpg",
+    alt: "Badminton District logo",
+  },
+  {
+    src: "/images/bd%20logo%202.jpg",
+    alt: "Badminton District logo",
+  },
+];
+
 export default function Home() {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -77,12 +89,24 @@ export default function Home() {
       <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="text-lg font-semibold tracking-tight">
-              Dizer Badminton Academy
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="text-lg font-semibold tracking-tight">
+                Dizer Badminton Academy
+              </div>
+              <Badge className="border border-accent/60 bg-accent text-accent-foreground">
+                Home of Dizer Badminton Academy
+              </Badge>
             </div>
-            <Badge variant="outline" className="uppercase tracking-[0.2em]">
-              Structured Training Academy
-            </Badge>
+            <div className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              <Image
+                src="/images/BD%20logo%201.jpg"
+                alt="Badminton District logo"
+                width={64}
+                height={32}
+                className="h-6 w-auto object-contain"
+              />
+              <span>Badminton District</span>
+            </div>
           </div>
           <NavigationMenu className="w-full justify-start">
             <NavigationMenuList className="flex flex-wrap items-center justify-start gap-2 text-sm font-medium text-muted-foreground">
@@ -158,13 +182,18 @@ export default function Home() {
               program.
             </p>
           </div>
-          <Card className="border-dashed">
-            <CardHeader>
-              <CardTitle>Placeholder image area</CardTitle>
-              <CardDescription>
-                Academy facility or training environment
-              </CardDescription>
-            </CardHeader>
+          <Card className="overflow-hidden">
+            <CardContent className="p-0">
+              <div className="relative aspect-[4/3] w-full">
+                <Image
+                  src="/images/IMG_4904.JPG"
+                  alt="Athlete training session"
+                  fill
+                  className="object-cover"
+                  priority
+                />
+              </div>
+            </CardContent>
           </Card>
         </section>
 
@@ -182,11 +211,17 @@ export default function Home() {
             </p>
           </div>
           <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr]">
-            <Card className="border-dashed">
-              <CardHeader>
-                <CardTitle>Picture placeholder</CardTitle>
-                <CardDescription>Trainees doing drills</CardDescription>
-              </CardHeader>
+            <Card className="overflow-hidden">
+              <CardContent className="p-0">
+                <div className="relative aspect-[4/3] w-full">
+                  <Image
+                    src="/images/IMG_4889.JPG"
+                    alt="Trainees doing drills"
+                    fill
+                    className="object-cover"
+                  />
+                </div>
+              </CardContent>
             </Card>
             <div className="grid gap-4 sm:grid-cols-2">
               {philosophyPoints.map((item) => (
@@ -350,6 +385,22 @@ export default function Home() {
               organizations seeking a disciplined, safe, and
               performance-oriented badminton environment.
             </p>
+            <div className="flex flex-wrap items-center gap-6">
+              {venueLogos.map((logo) => (
+                <div
+                  key={logo.src}
+                  className="flex items-center rounded-lg border bg-card px-4 py-2"
+                >
+                  <Image
+                    src={logo.src}
+                    alt={logo.alt}
+                    width={120}
+                    height={60}
+                    className="h-10 w-auto object-contain"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
           <div className="grid gap-6 lg:grid-cols-3">
             <Card id="courts">
