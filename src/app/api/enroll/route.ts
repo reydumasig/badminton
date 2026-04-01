@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { createServerClient } from "@/lib/supabase";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -15,6 +16,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 1. Save to Supabase (primary record — never lost)
+    const supabase = createServerClient();
+    if (supabase) {
+      const { error: dbError } = await supabase
+        .from("enrollments")
+        .insert({ name, email, program });
+
+      if (dbError) {
+        console.error("[ENROLL DB ERROR]", dbError.message);
+        // Continue anyway — still try to send email
+      }
+    } else {
+      console.warn("[ENROLL] Supabase not configured — skipping DB insert.");
+    }
+
+    // 2. Send email notification (secondary — nice to have)
     const apiKey = process.env.RESEND_API_KEY;
     const academyEmail = process.env.ACADEMY_EMAIL;
 
@@ -46,7 +63,6 @@ export async function POST(req: NextRequest) {
         `,
       });
     } else {
-      // Log to console in dev when email is not configured
       console.log("[ENROLL SUBMISSION]", { name, email, program });
     }
 
