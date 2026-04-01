@@ -8,7 +8,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   NavigationMenu,
   NavigationMenuItem,
@@ -17,7 +16,8 @@ import {
   navigationMenuTriggerStyle,
 } from "@/components/ui/navigation-menu";
 import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
+import EnrollmentForm from "@/components/EnrollmentForm";
+import ContactForm from "@/components/ContactForm";
 
 const philosophyPoints = [
   {
@@ -335,39 +335,11 @@ export default function Home() {
           <div className="space-y-4">
             <h2 className="text-2xl font-semibold">Enroll</h2>
             <p className="text-muted-foreground">
-              Registration Form (static placeholder)
+              Interested in joining Dizer Badminton Academy? Fill out the form
+              and our team will reach out to you within 24–48 hours.
             </p>
           </div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Registration Form</CardTitle>
-              <CardDescription>
-                Share your details and we will follow up.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Full Name</label>
-                <Input placeholder="Enter name" className="mt-2" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Email</label>
-                <Input type="email" placeholder="Enter email" className="mt-2" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">
-                  Program of Interest
-                </label>
-                <Input
-                  placeholder="Junior Development, High-Performance..."
-                  className="mt-2"
-                />
-              </div>
-              <Button type="button" className="w-full">
-                Submit Registration
-              </Button>
-            </CardContent>
-          </Card>
+          <EnrollmentForm />
         </section>
 
         <Separator className="my-10" />
@@ -503,38 +475,7 @@ export default function Home() {
               </CardContent>
             </Card>
           </div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Send a Message</CardTitle>
-              <CardDescription>
-                We aim to respond within 24–48 hours.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Name</label>
-                <Input placeholder="Your name" className="mt-2" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Email</label>
-                <Input type="email" placeholder="you@email.com" className="mt-2" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Phone (optional)</label>
-                <Input type="tel" placeholder="+63..." className="mt-2" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Message</label>
-                <Textarea rows={4} placeholder="How can we help?" className="mt-2" />
-              </div>
-              <Button type="button" className="w-full">
-                Submit
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Thank you for reaching out!
-              </p>
-            </CardContent>
-          </Card>
+          <ContactForm />
         </section>
       </main>
 
