@@ -102,7 +102,7 @@ export default async function Home() {
         asChild
         className="fixed right-6 top-1/2 z-50 -translate-y-1/2 rounded-full px-5 py-3 text-sm shadow-lg"
       >
-        <a href="#contact">Book a Court</a>
+        <a href="/book">Book a Court</a>
       </Button>
 
       <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">

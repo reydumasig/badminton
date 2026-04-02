@@ -24,21 +24,28 @@ export default async function AdminPage() {
     );
   }
 
-  const [{ data: enrollments }, { data: contacts }] = await Promise.all([
-    supabase
-      .from("enrollments")
-      .select("*")
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("contacts")
-      .select("*")
-      .order("created_at", { ascending: false }),
-  ]);
+  const [{ data: enrollments }, { data: contacts }, { data: bookings }] =
+    await Promise.all([
+      supabase
+        .from("enrollments")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("contacts")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("bookings")
+        .select("*")
+        .order("date", { ascending: false })
+        .order("start_time", { ascending: false }),
+    ]);
 
   return (
     <AdminDashboard
       enrollments={enrollments ?? []}
       contacts={contacts ?? []}
+      bookings={bookings ?? []}
     />
   );
 }
