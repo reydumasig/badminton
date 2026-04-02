@@ -14,7 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { createAuthBrowserClient } from "@/lib/supabase-auth";
+import { createAuthBrowserClient } from "@/lib/supabase-auth-browser";
 
 // ─── Constants ────────────────────────────────────────────────
 const COURTS = [1, 2, 3];

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createAuthServerClient } from "@/lib/supabase-auth";
+import { createAuthServerClient } from "@/lib/supabase-auth-server";
 import { createServerClient } from "@/lib/supabase";
 import MemberPortal from "@/components/MemberPortal";
 

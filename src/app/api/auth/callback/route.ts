@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAuthServerClient } from "@/lib/supabase-auth";
+import { createAuthServerClient } from "@/lib/supabase-auth-server";
 
 // Handles email confirmation and OAuth callbacks from Supabase Auth
 export async function GET(req: NextRequest) {

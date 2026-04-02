@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createAuthBrowserClient } from "@/lib/supabase-auth";
+import { createAuthBrowserClient } from "@/lib/supabase-auth-browser";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
