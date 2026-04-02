@@ -19,6 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import EnrollmentForm from "@/components/EnrollmentForm";
 import ContactForm from "@/components/ContactForm";
 import { createServerClient } from "@/lib/supabase";
+import { createAuthServerClient } from "@/lib/supabase-auth-server";
 
 const philosophyPoints = [
   {
@@ -87,6 +88,8 @@ const venueLogos = [
 
 export default async function Home() {
   const supabase = createServerClient();
+  const supabaseAuth = await createAuthServerClient();
+  const { data: { user } } = await supabaseAuth.auth.getUser();
 
   const [programs, coaches] = await Promise.all([
     supabase
@@ -116,15 +119,26 @@ export default async function Home() {
                 Home of Dizer Badminton Academy
               </Badge>
             </div>
-            <div className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-              <Image
-                src="/images/BD%20logo%201.jpg"
-                alt="Badminton District logo"
-                width={64}
-                height={32}
-                className="h-6 w-auto object-contain"
-              />
-              <span>Badminton District</span>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                <Image
+                  src="/images/BD%20logo%201.jpg"
+                  alt="Badminton District logo"
+                  width={64}
+                  height={32}
+                  className="h-6 w-auto object-contain"
+                />
+                <span>Badminton District</span>
+              </div>
+              {user ? (
+                <Button asChild size="sm" variant="outline">
+                  <a href="/dashboard">My Bookings</a>
+                </Button>
+              ) : (
+                <Button asChild size="sm" variant="outline">
+                  <a href="/login">Sign In</a>
+                </Button>
+              )}
             </div>
           </div>
           <NavigationMenu className="w-full justify-start">
