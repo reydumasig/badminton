@@ -23,7 +23,7 @@ function formatDate(dateStr: string) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { date, startTime, courtNumber, name, email, phone } = body;
+    const { date, startTime, courtNumber, name, email, phone, userId } = body;
 
     if (!date || !startTime || !courtNumber || !name || !email || !phone) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
         email,
         phone,
         status: "confirmed",
+        ...(userId ? { user_id: userId } : {}),
       })
       .select("id")
       .single();

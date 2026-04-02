@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { createAuthBrowserClient } from "@/lib/supabase-auth";
 
 // ─── Constants ────────────────────────────────────────────────
 const COURTS = [1, 2, 3];
@@ -70,6 +71,15 @@ export default function BookingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [bookingId, setBookingId] = useState("");
+  const [userId, setUserId] = useState<string | null>(null);
+
+  // Check if user is logged in — used to link booking to their account
+  useEffect(() => {
+    const supabase = createAuthBrowserClient();
+    supabase.auth.getUser().then(({ data }) => {
+      setUserId(data.user?.id ?? null);
+    });
+  }, []);
 
   const { register, handleSubmit, formState: { errors } } = useForm<GuestData>({
     resolver: zodResolver(guestSchema),
@@ -130,6 +140,7 @@ export default function BookingPage() {
           date: selectedDate,
           startTime: selectedTime,
           courtNumber: selectedCourt,
+          userId: userId ?? undefined,
           ...data,
         }),
       });
