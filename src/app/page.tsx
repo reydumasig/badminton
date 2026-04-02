@@ -18,6 +18,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import EnrollmentForm from "@/components/EnrollmentForm";
 import ContactForm from "@/components/ContactForm";
+import { createServerClient } from "@/lib/supabase";
 
 const philosophyPoints = [
   {
@@ -46,22 +47,30 @@ const philosophyPoints = [
   },
 ];
 
-const programs = [
+// Fallback data used when DB is unavailable
+const fallbackPrograms = [
+  { title: "Junior Development",           description: "Foundation training for athletes." },
+  { title: "High-Performance",             description: "Advanced training for competitive players." },
+  { title: "Sponsored Athletes",           description: "Full or partial support for selected trainees." },
+  { title: "Corporate and Adult Training", description: "Custom programs for working professionals." },
+];
+
+const fallbackCoaches = [
   {
-    title: "Junior Development",
-    text: "Foundation training for athletes.",
+    role: "Coaching Director",
+    name: "Ryan Garreth Dizer",
+    credential: "BWF Accredited Coach",
+    education: "Bachelor of Physical Education",
+    school: "University of the Philippines, Diliman",
+    career_notes: "Montessori Integrated School of Antipolo | Roots Academy | St. Clare",
   },
   {
-    title: "High-Performance",
-    text: "Advanced training for competitive players.",
-  },
-  {
-    title: "Sponsored Athletes",
-    text: "Full or partial support for selected trainees.",
-  },
-  {
-    title: "Corporate and Adult Training",
-    text: "Custom programs for working professionals.",
+    role: "Head Coach",
+    name: "Reinald Greg Dizer",
+    credential: "BWF Accredited Coach",
+    education: "Bachelor of Science, Physical Therapy",
+    school: "University of Sto. Tomas",
+    career_notes: "Registered Physiotherapist | Physiotherapist in Singapore, 2016-2018 | Strength and Conditioning Coach",
   },
 ];
 
@@ -76,7 +85,17 @@ const venueLogos = [
   },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const supabase = createServerClient();
+
+  const [programs, coaches] = await Promise.all([
+    supabase
+      ? supabase.from("programs").select("*").eq("active", true).order("sort_order").then(({ data }) => data ?? fallbackPrograms)
+      : Promise.resolve(fallbackPrograms),
+    supabase
+      ? supabase.from("coaches").select("*").eq("active", true).order("sort_order").then(({ data }) => data ?? fallbackCoaches)
+      : Promise.resolve(fallbackCoaches),
+  ]);
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Button
@@ -258,41 +277,31 @@ export default function Home() {
         <section id="coaches" className="space-y-6">
           <h2 className="text-2xl font-semibold">Coaches</h2>
           <div className="grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <Badge variant="outline">Coaching Director</Badge>
-                <CardTitle>Ryan Garreth Dizer</CardTitle>
-                <CardDescription>BWF Accredited Coach</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm text-muted-foreground">
-                <div className="space-y-1">
-                  <p>Bachelor of Physical Education</p>
-                  <p>University of the Philippines, Diliman</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-foreground">
-                    Coaching Career
-                  </p>
-                  <p>Montessori Integrated School of Antipolo</p>
-                  <p>Roots Academy</p>
-                  <p>St. Clare</p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <Badge variant="outline">Head Coach</Badge>
-                <CardTitle>Reinald Greg Dizer</CardTitle>
-                <CardDescription>BWF Accredited Coach</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>Bachelor of Science, Physical Therapy</p>
-                <p>University of Sto. Tomas</p>
-                <p>Registered Physiotherapist</p>
-                <p>Physiotherapist in Singapore, 2016-2018</p>
-                <p>Strength and Conditioning Coach</p>
-              </CardContent>
-            </Card>
+            {coaches.map((coach) => (
+              <Card key={coach.name}>
+                <CardHeader>
+                  <Badge variant="outline">{coach.role}</Badge>
+                  <CardTitle>{coach.name}</CardTitle>
+                  <CardDescription>{coach.credential}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm text-muted-foreground">
+                  {(coach.education || coach.school) && (
+                    <div className="space-y-1">
+                      {coach.education && <p>{coach.education}</p>}
+                      {coach.school && <p>{coach.school}</p>}
+                    </div>
+                  )}
+                  {coach.career_notes && (
+                    <div>
+                      <p className="font-semibold text-foreground">Coaching Career</p>
+                      {coach.career_notes.split("|").map((note: string) => (
+                        <p key={note.trim()}>{note.trim()}</p>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </section>
 
@@ -322,7 +331,7 @@ export default function Home() {
               <Card key={program.title}>
                 <CardHeader>
                   <CardTitle>{program.title}</CardTitle>
-                  <CardDescription>{program.text}</CardDescription>
+                  <CardDescription>{program.description}</CardDescription>
                 </CardHeader>
               </Card>
             ))}
