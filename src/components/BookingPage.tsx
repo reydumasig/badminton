@@ -17,8 +17,12 @@ import { Badge } from "@/components/ui/badge";
 import { createAuthBrowserClient } from "@/lib/supabase-auth-browser";
 
 // ─── Constants ────────────────────────────────────────────────
-const COURTS = [1, 2, 3, 4, 5];
-const PRICE_PER_SLOT = 200; // PHP per 1-hour slot
+const COURTS = [1, 2, 3];
+
+// Court 1 & 2 → ₱320/hr · Court 3 → ₱300/hr
+function courtPrice(court: number): number {
+  return court === 3 ? 300 : 320;
+}
 
 const TIME_SLOTS: string[] = [];
 for (let h = 6; h < 22; h++) {
@@ -340,7 +344,10 @@ export default function BookingPage() {
       })
       .sort((a, b) => a.court - b.court || a.time.localeCompare(b.time));
 
-  const totalPrice = selectedSlots.size * PRICE_PER_SLOT;
+  const totalPrice = Array.from(selectedSlots).reduce((sum, key) => {
+    const court = parseInt(key.split("::")[0], 10);
+    return sum + courtPrice(court);
+  }, 0);
 
   // ── Handlers ───────────────────────────────────────────────
   const handleDateConfirm = () => {
@@ -611,7 +618,7 @@ export default function BookingPage() {
                 <span>
                   Court {s.court} · {formatTime(s.time)}–{formatEndTime(s.time)}
                 </span>
-                <span className="font-medium">₱{PRICE_PER_SLOT}</span>
+                <span className="font-medium">₱{courtPrice(s.court)}</span>
               </div>
             ))}
             <div className="flex justify-between font-bold text-sm pt-2 border-t border-blue-200 dark:border-blue-700 text-blue-900 dark:text-blue-100 mt-2">
@@ -703,7 +710,7 @@ export default function BookingPage() {
   }
 
   // ── Step: Confirmed ────────────────────────────────────────
-  const confirmedTotal = confirmedSlots.length * PRICE_PER_SLOT;
+  const confirmedTotal = confirmedSlots.reduce((sum, s) => sum + courtPrice(s.court), 0);
   return (
     <div className="space-y-6 max-w-md">
       {/* Confirmation card */}
@@ -737,7 +744,7 @@ export default function BookingPage() {
                 <span>
                   Court {s.court} · {formatTime(s.time)}–{formatEndTime(s.time)}
                 </span>
-                <span className="font-medium">₱{PRICE_PER_SLOT}</span>
+                <span className="font-medium">₱{courtPrice(s.court)}</span>
               </div>
             ))}
           </div>

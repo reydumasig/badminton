@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/card";
 
 // ─── Constants ────────────────────────────────────────────────
-const COURTS = [1, 2, 3, 4, 5];
+const COURTS = [1, 2, 3];
 const TIME_SLOTS: string[] = [];
 for (let h = 6; h < 22; h++)
   TIME_SLOTS.push(`${h.toString().padStart(2, "0")}:00`);
@@ -90,6 +90,7 @@ type Booking = {
   email: string;
   phone: string;
   status: string;
+  payment_proof_url?: string | null;
 };
 
 type ModalState =
@@ -135,6 +136,58 @@ function BookingModal({
   const [loading, setLoading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [error, setError] = useState("");
+
+  // Proof of payment state (edit mode only)
+  const [proofUrl, setProofUrl]         = useState<string | null>(existing?.payment_proof_url ?? null);
+  const [proofLoading, setProofLoading] = useState(false);
+  const [proofSuccess, setProofSuccess] = useState(false);
+  const [proofError, setProofError]     = useState("");
+  const proofInputRef = useRef<HTMLInputElement>(null);
+
+  const handleProofUpload = async (file: File) => {
+    setProofLoading(true);
+    setProofError("");
+    setProofSuccess(false);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("bookingId", existing!.id);
+      const res  = await fetch("/api/bookings/proof", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok) { setProofError(json.error || "Upload failed."); return; }
+      setProofUrl(json.url);
+      setProofSuccess(true);
+      setTimeout(() => setProofSuccess(false), 4000);
+      // Propagate URL so the table row also refreshes
+      onSaved({ ...existing!, payment_proof_url: json.url }, false);
+    } catch {
+      setProofError("Network error. Please try again.");
+    } finally {
+      setProofLoading(false);
+      if (proofInputRef.current) proofInputRef.current.value = "";
+    }
+  };
+
+  const handleProofRemove = async () => {
+    if (!proofUrl) return;
+    setProofLoading(true);
+    setProofError("");
+    try {
+      const res  = await fetch("/api/bookings/proof", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId: existing!.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setProofError(json.error || "Remove failed."); return; }
+      setProofUrl(null);
+      onSaved({ ...existing!, payment_proof_url: null }, false);
+    } catch {
+      setProofError("Network error. Please try again.");
+    } finally {
+      setProofLoading(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!name.trim()) { setError("Name / label is required."); return; }
@@ -333,6 +386,97 @@ function BookingModal({
               </select>
             </div>
           </div>
+
+          {/* Payment proof (edit only — admin can upload / replace / remove) */}
+          {isEdit && (
+            <div>
+              <label className="text-sm font-medium">Payment Proof</label>
+
+              {/* Hidden file input */}
+              <input
+                ref={proofInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif,image/heic"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleProofUpload(f);
+                }}
+              />
+
+              {proofUrl ? (
+                /* ── Has proof: thumbnail + action bar ── */
+                <div className="mt-1.5 rounded-lg border overflow-hidden bg-muted/20">
+                  <a href={proofUrl} target="_blank" rel="noopener noreferrer" title="Open full size">
+                    <img
+                      src={proofUrl}
+                      alt="Payment proof"
+                      className="w-full max-h-52 object-contain bg-black/5 hover:opacity-90 transition-opacity"
+                    />
+                  </a>
+                  <div className="flex items-center justify-between px-3 py-2 border-t bg-background flex-wrap gap-y-1">
+                    <span className="text-xs text-green-700 dark:text-green-400 font-medium flex items-center gap-1">
+                      {proofSuccess ? "✓ Uploaded successfully!" : "✓ Proof on file"}
+                    </span>
+                    <div className="flex items-center gap-3 text-xs">
+                      <a
+                        href={proofUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline underline-offset-2"
+                      >
+                        View ↗
+                      </a>
+                      <button
+                        type="button"
+                        disabled={proofLoading}
+                        onClick={() => proofInputRef.current?.click()}
+                        className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                      >
+                        Replace
+                      </button>
+                      <button
+                        type="button"
+                        disabled={proofLoading}
+                        onClick={handleProofRemove}
+                        className="text-destructive hover:text-destructive/80 transition-colors disabled:opacity-40"
+                      >
+                        {proofLoading ? "Removing…" : "Remove"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* ── No proof: dashed upload zone ── */
+                <button
+                  type="button"
+                  disabled={proofLoading}
+                  onClick={() => proofInputRef.current?.click()}
+                  className="mt-1.5 w-full border-2 border-dashed rounded-lg px-4 py-5 flex flex-col items-center gap-1.5 text-muted-foreground hover:border-primary hover:text-primary transition-colors disabled:opacity-40"
+                >
+                  {proofLoading ? (
+                    <span className="text-xs">Uploading…</span>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                        <circle cx="12" cy="13" r="4"/>
+                      </svg>
+                      <span className="text-xs font-medium">Upload proof of payment</span>
+                      <span className="text-[11px] opacity-70">JPG, PNG, WEBP, GIF, HEIC · max 5 MB</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              {proofSuccess && !proofUrl && (
+                <p className="mt-1.5 text-xs text-green-700 dark:text-green-400">✓ Proof uploaded successfully!</p>
+              )}
+              {proofError && (
+                <p className="mt-1.5 text-xs text-destructive">{proofError}</p>
+              )}
+            </div>
+          )}
 
           {/* Status (edit only) */}
           {isEdit && (
@@ -810,7 +954,7 @@ export default function AdminDashboard({
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-muted/50">
-                        {["Date","Time","Court","Name","Email","Phone","Status"].map((h) => (
+                        {["Date","Time","Court","Name","Email","Phone","Proof","Status"].map((h) => (
                           <th key={h} className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">
                             {h}
                           </th>
@@ -852,6 +996,20 @@ export default function AdminDashboard({
                             </a>
                           </td>
                           <td className="px-4 py-3 text-muted-foreground">{b.phone}</td>
+                          <td className="px-4 py-3">
+                            {b.payment_proof_url ? (
+                              <a
+                                href={b.payment_proof_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline underline-offset-2 font-medium"
+                              >
+                                <span className="text-green-600">✓</span> View ↗
+                              </a>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3">
                             <span
                               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${

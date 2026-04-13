@@ -97,8 +97,10 @@ export async function POST(req: NextRequest) {
 
     const bookingIds = (data ?? []).map((d) => d.id as string);
     const formattedDate = formatDate(date);
-    const PRICE_PER_SLOT = 200;
-    const total = slots.length * PRICE_PER_SLOT;
+
+    // Per-court pricing: Court 1 & 2 → ₱320/hr, Court 3 → ₱300/hr
+    const courtPrice = (courtNumber: number) => courtNumber === 3 ? 300 : 320;
+    const total = slots.reduce((sum, s) => sum + courtPrice(s.courtNumber), 0);
 
     // Build the slots table for emails
     const slotRows = slots
@@ -109,7 +111,7 @@ export async function POST(req: NextRequest) {
         <tr style="border-bottom:1px solid #f0f0f0;">
           <td style="padding:8px 12px 8px 0;color:#333;">Court ${s.courtNumber}</td>
           <td style="padding:8px 12px 8px 0;color:#333;">${formatTime(s.startTime)} – ${formatEndTime(s.startTime)}</td>
-          <td style="padding:8px 0;color:#333;text-align:right;">₱${PRICE_PER_SLOT}</td>
+          <td style="padding:8px 0;color:#333;text-align:right;">₱${courtPrice(s.courtNumber)}</td>
         </tr>`
       )
       .join("");
