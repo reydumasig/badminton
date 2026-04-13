@@ -10,12 +10,15 @@ export default function Book() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b bg-background/90 backdrop-blur sticky top-0 z-40">
         <div className="mx-auto flex w-full max-w-4xl items-center justify-between px-6 py-4">
-          <div>
-            <a href="/" className="text-sm text-muted-foreground hover:text-foreground">
-              ← Back to site
+          <a href="/" className="text-sm text-muted-foreground hover:text-foreground">
+            ← Back to site
+          </a>
+          <div className="flex items-center gap-4">
+            <a href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground font-medium">
+              My Bookings
             </a>
+            <span className="text-sm font-semibold">Badminton District</span>
           </div>
-          <div className="text-sm font-medium">Badminton District</div>
         </div>
       </header>
 

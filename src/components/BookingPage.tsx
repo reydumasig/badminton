@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -17,8 +17,12 @@ import { Badge } from "@/components/ui/badge";
 import { createAuthBrowserClient } from "@/lib/supabase-auth-browser";
 
 // ─── Constants ────────────────────────────────────────────────
-const COURTS = [1, 2, 3, 4, 5];
-const PRICE_PER_SLOT = 200; // PHP per 1-hour slot
+const COURTS = [1, 2, 3];
+
+// Court 1 & 2 → ₱320/hr · Court 3 → ₱300/hr
+function courtPrice(court: number): number {
+  return court === 3 ? 300 : 320;
+}
 
 const TIME_SLOTS: string[] = [];
 for (let h = 6; h < 22; h++) {
@@ -71,6 +75,199 @@ type GuestData = z.infer<typeof guestSchema>;
 type BookedSlot = { court: number; time: string };
 type SelectedSlot = { court: number; time: string };
 type Step = "date" | "slot" | "details" | "confirmed";
+
+// ─── Payment QR Codes Card ────────────────────────────────────
+function PaymentQRCodes() {
+  return (
+    <Card className="max-w-md border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-bold text-yellow-900 dark:text-yellow-100">
+          💳 Payment via InstaPay / GCash
+        </CardTitle>
+        <CardDescription className="text-yellow-700 dark:text-yellow-400">
+          Scan a QR code below to pay in advance, then upload your proof of payment after booking.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-2 gap-3">
+          {/* RCBC */}
+          <div className="flex flex-col items-center gap-2">
+            <div className="rounded-xl overflow-hidden border-2 border-yellow-200 dark:border-yellow-700 bg-white shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/rcbc-qr.png"
+                alt="RCBC InstaPay QR Code – Grace Dizer"
+                className="w-full object-contain"
+              />
+            </div>
+            <div className="text-center">
+              <p className="text-xs font-semibold text-yellow-900 dark:text-yellow-100">RCBC InstaPay</p>
+              <p className="text-[11px] text-yellow-700 dark:text-yellow-400">Grace Dizer · ****9527</p>
+            </div>
+          </div>
+          {/* GCash */}
+          <div className="flex flex-col items-center gap-2">
+            <div className="rounded-xl overflow-hidden border-2 border-yellow-200 dark:border-yellow-700 bg-white shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/gcash-qr.png"
+                alt="GCash QR Code – Grace Dizer"
+                className="w-full object-contain"
+              />
+            </div>
+            <div className="text-center">
+              <p className="text-xs font-semibold text-yellow-900 dark:text-yellow-100">GCash</p>
+              <p className="text-[11px] text-yellow-700 dark:text-yellow-400">0927 222 ···· · WG942J</p>
+            </div>
+          </div>
+        </div>
+        <p className="mt-3 text-[11px] text-yellow-600 dark:text-yellow-500 text-center">
+          After confirming your booking you&apos;ll be able to upload your payment screenshot.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Proof Upload (confirmed step, logged-in users) ───────────
+function ConfirmedProofUpload({ bookingIds }: { bookingIds: string[] }) {
+  const [proofUrl, setProofUrl]         = useState<string | null>(null);
+  const [uploading, setUploading]       = useState(false);
+  const [success, setSuccess]           = useState(false);
+  const [error, setError]               = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (file: File) => {
+    setUploading(true);
+    setError("");
+    setSuccess(false);
+    try {
+      // Upload proof to all bookingIds in this batch
+      let lastUrl = "";
+      for (const id of bookingIds) {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("bookingId", id);
+        const res  = await fetch("/api/bookings/proof", { method: "POST", body: fd });
+        const json = await res.json();
+        if (!res.ok) { setError(json.error || "Upload failed."); setUploading(false); return; }
+        lastUrl = json.url;
+      }
+      setProofUrl(lastUrl);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 5000);
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const handleRemove = async () => {
+    setUploading(true);
+    setError("");
+    try {
+      for (const id of bookingIds) {
+        await fetch("/api/bookings/proof", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bookingId: id }),
+        });
+      }
+      setProofUrl(null);
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-bold text-blue-900 dark:text-blue-100">
+          📎 Upload Proof of Payment
+        </CardTitle>
+        <CardDescription className="text-blue-700 dark:text-blue-400">
+          Already paid via InstaPay or GCash? Upload your screenshot here.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-3">
+        {/* Hidden file input */}
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif,image/heic"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+        />
+
+        {proofUrl ? (
+          /* ── Has proof ── */
+          <div className="rounded-lg border border-blue-200 dark:border-blue-700 overflow-hidden bg-white dark:bg-blue-900">
+            <a href={proofUrl} target="_blank" rel="noopener noreferrer">
+              <img
+                src={proofUrl}
+                alt="Payment proof"
+                className="w-full max-h-48 object-contain bg-black/5 hover:opacity-90 transition-opacity"
+              />
+            </a>
+            <div className="flex items-center justify-between px-3 py-2 border-t border-blue-100 dark:border-blue-700">
+              <span className="text-xs text-green-700 dark:text-green-400 font-medium">
+                {success ? "✓ Uploaded successfully!" : "✓ Proof submitted"}
+              </span>
+              <div className="flex items-center gap-3 text-xs">
+                <a href={proofUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-blue-700 dark:text-blue-300 hover:underline">
+                  View ↗
+                </a>
+                <button
+                  disabled={uploading}
+                  onClick={() => inputRef.current?.click()}
+                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 disabled:opacity-40">
+                  Replace
+                </button>
+                <button
+                  disabled={uploading}
+                  onClick={handleRemove}
+                  className="text-red-500 hover:text-red-700 disabled:opacity-40">
+                  {uploading ? "Removing…" : "Remove"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* ── No proof yet ── */
+          <button
+            disabled={uploading}
+            onClick={() => inputRef.current?.click()}
+            className="w-full border-2 border-dashed border-blue-300 dark:border-blue-600 rounded-lg px-4 py-6 flex flex-col items-center gap-2 text-blue-600 dark:text-blue-400 hover:border-blue-500 hover:text-blue-800 dark:hover:text-blue-200 transition-colors disabled:opacity-40"
+          >
+            {uploading ? (
+              <span className="text-sm">Uploading…</span>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <span className="text-sm font-medium">Tap to upload payment screenshot</span>
+                <span className="text-xs opacity-70">JPG, PNG, WEBP, GIF, HEIC · max 5 MB</span>
+              </>
+            )}
+          </button>
+        )}
+
+        {success && !proofUrl && (
+          <p className="text-xs text-green-700 dark:text-green-400">✓ Proof uploaded successfully!</p>
+        )}
+        {error && <p className="text-xs text-red-500">{error}</p>}
+      </CardContent>
+    </Card>
+  );
+}
 
 // ─── Component ────────────────────────────────────────────────
 export default function BookingPage() {
@@ -147,7 +344,10 @@ export default function BookingPage() {
       })
       .sort((a, b) => a.court - b.court || a.time.localeCompare(b.time));
 
-  const totalPrice = selectedSlots.size * PRICE_PER_SLOT;
+  const totalPrice = Array.from(selectedSlots).reduce((sum, key) => {
+    const court = parseInt(key.split("::")[0], 10);
+    return sum + courtPrice(court);
+  }, 0);
 
   // ── Handlers ───────────────────────────────────────────────
   const handleDateConfirm = () => {
@@ -418,18 +618,18 @@ export default function BookingPage() {
                 <span>
                   Court {s.court} · {formatTime(s.time)}–{formatEndTime(s.time)}
                 </span>
-                <span className="font-medium">₱{PRICE_PER_SLOT}</span>
+                <span className="font-medium">₱{courtPrice(s.court)}</span>
               </div>
             ))}
             <div className="flex justify-between font-bold text-sm pt-2 border-t border-blue-200 dark:border-blue-700 text-blue-900 dark:text-blue-100 mt-2">
               <span>Total ({slotsList.length} slot{slotsList.length > 1 ? "s" : ""})</span>
               <span>₱{totalPrice.toLocaleString()}</span>
             </div>
-            <p className="text-xs text-blue-600 dark:text-blue-400 pt-1">
-              💳 Pay at venue upon arrival
-            </p>
           </CardContent>
         </Card>
+
+        {/* Payment QR Codes */}
+        <PaymentQRCodes />
 
         {/* Contact Form */}
         <Card className="max-w-md">
@@ -510,9 +710,10 @@ export default function BookingPage() {
   }
 
   // ── Step: Confirmed ────────────────────────────────────────
-  const confirmedTotal = confirmedSlots.length * PRICE_PER_SLOT;
+  const confirmedTotal = confirmedSlots.reduce((sum, s) => sum + courtPrice(s.court), 0);
   return (
     <div className="space-y-6 max-w-md">
+      {/* Confirmation card */}
       <Card className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950">
         <CardHeader>
           <Badge
@@ -527,7 +728,7 @@ export default function BookingPage() {
               : "Booking Confirmed!"}
           </CardTitle>
           <CardDescription className="text-green-700 dark:text-green-300">
-            A confirmation has been sent to your email. Please pay at the venue upon arrival.
+            A confirmation has been sent to your email.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
@@ -543,7 +744,7 @@ export default function BookingPage() {
                 <span>
                   Court {s.court} · {formatTime(s.time)}–{formatEndTime(s.time)}
                 </span>
-                <span className="font-medium">₱{PRICE_PER_SLOT}</span>
+                <span className="font-medium">₱{courtPrice(s.court)}</span>
               </div>
             ))}
           </div>
@@ -558,18 +759,34 @@ export default function BookingPage() {
           )}
         </CardContent>
       </Card>
-      <Button
-        variant="outline"
-        onClick={() => {
-          setStep("date");
-          setSelectedDate("");
-          setSelectedSlots(new Set());
-          setConfirmedSlots([]);
-          setBookingIds([]);
-        }}
-      >
-        Book Another
-      </Button>
+
+      {/* Proof of payment upload (logged-in users with booking IDs) */}
+      {userId && bookingIds.length > 0 && (
+        <ConfirmedProofUpload bookingIds={bookingIds} />
+      )}
+
+      {/* QR codes reminder for guests who haven't paid yet */}
+      {!userId && <PaymentQRCodes />}
+
+      <div className="flex gap-3 flex-wrap">
+        <Button
+          variant="outline"
+          onClick={() => {
+            setStep("date");
+            setSelectedDate("");
+            setSelectedSlots(new Set());
+            setConfirmedSlots([]);
+            setBookingIds([]);
+          }}
+        >
+          Book Another
+        </Button>
+        {userId && (
+          <Button asChild variant="outline">
+            <a href="/dashboard">View My Bookings</a>
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
