@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createServerClient } from "@/lib/supabase";
 import { createAuthServerClient } from "@/lib/supabase-auth-server";
 
 const BUCKET       = "payment-proofs";
 const MAX_SIZE_MB  = 5;
 const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic"];
+
+// ── Admin check (mirrors /api/admin/bookings) ─────────────────
+async function isAdmin(): Promise<boolean> {
+  const cookieStore = await cookies();
+  const session     = cookieStore.get("admin_session")?.value;
+  const adminPw     = process.env.ADMIN_PASSWORD;
+  if (!adminPw || !session) return false;
+  return session === adminPw;
+}
 
 // ── Helper: extract storage path from public URL ───────────────
 function extractStoragePath(url: string): string | null {
@@ -21,10 +31,16 @@ function extractStoragePath(url: string): string | null {
 // ── POST /api/bookings/proof — upload a proof image ────────────
 export async function POST(req: NextRequest) {
   try {
-    // Auth
-    const supabaseAuth = await createAuthServerClient();
-    const { data: { user } } = await supabaseAuth.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorised." }, { status: 401 });
+    const adminOk = await isAdmin();
+
+    // Auth: admin OR logged-in member
+    let userId: string | null = null;
+    if (!adminOk) {
+      const supabaseAuth = await createAuthServerClient();
+      const { data: { user } } = await supabaseAuth.auth.getUser();
+      if (!user) return NextResponse.json({ error: "Unauthorised." }, { status: 401 });
+      userId = user.id;
+    }
 
     // Parse multipart form data
     const formData  = await req.formData();
@@ -54,7 +70,7 @@ export async function POST(req: NextRequest) {
     const supabase = createServerClient();
     if (!supabase) return NextResponse.json({ error: "Database not configured." }, { status: 503 });
 
-    // Ownership check
+    // Fetch booking
     const { data: booking, error: fetchError } = await supabase
       .from("bookings")
       .select("id, user_id, payment_proof_url, status")
@@ -62,9 +78,13 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (fetchError || !booking) return NextResponse.json({ error: "Booking not found." }, { status: 404 });
-    if (booking.user_id !== user.id) return NextResponse.json({ error: "Unauthorised." }, { status: 403 });
-    if (booking.status === "cancelled") {
-      return NextResponse.json({ error: "Cannot upload proof for a cancelled booking." }, { status: 400 });
+
+    // Members: must own the booking and it can't be cancelled
+    if (!adminOk) {
+      if (booking.user_id !== userId) return NextResponse.json({ error: "Unauthorised." }, { status: 403 });
+      if (booking.status === "cancelled") {
+        return NextResponse.json({ error: "Cannot upload proof for a cancelled booking." }, { status: 400 });
+      }
     }
 
     // Remove old file if one already exists
@@ -113,10 +133,16 @@ export async function POST(req: NextRequest) {
 // ── DELETE /api/bookings/proof — remove a proof image ─────────
 export async function DELETE(req: NextRequest) {
   try {
-    // Auth
-    const supabaseAuth = await createAuthServerClient();
-    const { data: { user } } = await supabaseAuth.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorised." }, { status: 401 });
+    const adminOk = await isAdmin();
+
+    // Auth: admin OR logged-in member
+    let userId: string | null = null;
+    if (!adminOk) {
+      const supabaseAuth = await createAuthServerClient();
+      const { data: { user } } = await supabaseAuth.auth.getUser();
+      if (!user) return NextResponse.json({ error: "Unauthorised." }, { status: 401 });
+      userId = user.id;
+    }
 
     const { bookingId } = (await req.json()) as { bookingId: string };
     if (!bookingId) return NextResponse.json({ error: "Missing booking ID." }, { status: 400 });
@@ -124,7 +150,7 @@ export async function DELETE(req: NextRequest) {
     const supabase = createServerClient();
     if (!supabase) return NextResponse.json({ error: "Database not configured." }, { status: 503 });
 
-    // Ownership check
+    // Fetch booking
     const { data: booking, error: fetchError } = await supabase
       .from("bookings")
       .select("id, user_id, payment_proof_url")
@@ -132,7 +158,11 @@ export async function DELETE(req: NextRequest) {
       .single();
 
     if (fetchError || !booking) return NextResponse.json({ error: "Booking not found." }, { status: 404 });
-    if (booking.user_id !== user.id) return NextResponse.json({ error: "Unauthorised." }, { status: 403 });
+
+    // Members: must own the booking
+    if (!adminOk && booking.user_id !== userId) {
+      return NextResponse.json({ error: "Unauthorised." }, { status: 403 });
+    }
 
     // Delete from storage
     if (booking.payment_proof_url) {
