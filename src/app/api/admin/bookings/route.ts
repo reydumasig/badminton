@@ -124,6 +124,41 @@ export async function PUT(req: NextRequest) {
   if (Object.keys(updates).length === 0)
     return NextResponse.json({ error: "No fields to update." }, { status: 400 });
 
+  // ── Conflict check when slot details are changing ─────
+  const isRescheduling = court_number !== undefined || date !== undefined || start_time !== undefined;
+  if (isRescheduling) {
+    // Fetch the current booking to fill in any unchanged fields
+    const { data: current } = await supabase
+      .from("bookings")
+      .select("date, court_number, start_time")
+      .eq("id", id)
+      .single();
+
+    if (current) {
+      const checkDate       = (date        ?? current.date)        as string;
+      const checkCourt      = (court_number ?? current.court_number) as number;
+      const checkTime       = (start_time  ?? current.start_time)  as string;
+
+      const { data: conflicts } = await supabase
+        .from("bookings")
+        .select("id, start_time")
+        .eq("date", checkDate)
+        .eq("court_number", checkCourt)
+        .eq("status", "confirmed")
+        .neq("id", id);
+
+      const hasConflict = (conflicts ?? []).some(
+        (c) => c.start_time.substring(0, 5) === checkTime.substring(0, 5)
+      );
+
+      if (hasConflict)
+        return NextResponse.json(
+          { error: "That slot is already booked. Please choose another." },
+          { status: 409 }
+        );
+    }
+  }
+
   const { error } = await supabase.from("bookings").update(updates).eq("id", id);
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });
