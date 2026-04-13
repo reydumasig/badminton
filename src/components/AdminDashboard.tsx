@@ -90,6 +90,7 @@ type Booking = {
   email: string;
   phone: string;
   status: string;
+  payment_proof_url?: string | null;
 };
 
 type ModalState =
@@ -333,6 +334,49 @@ function BookingModal({
               </select>
             </div>
           </div>
+
+          {/* Payment proof (edit only — view for admin) */}
+          {isEdit && existing?.payment_proof_url && (
+            <div>
+              <label className="text-sm font-medium">Payment Proof</label>
+              <div className="mt-1.5 rounded-lg border overflow-hidden bg-muted/20">
+                <a
+                  href={existing.payment_proof_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Click to open full size"
+                >
+                  <img
+                    src={existing.payment_proof_url}
+                    alt="Payment proof"
+                    className="w-full max-h-52 object-contain bg-black/5 hover:opacity-90 transition-opacity"
+                  />
+                </a>
+                <div className="flex items-center justify-between px-3 py-2 border-t bg-background">
+                  <span className="text-xs text-green-700 dark:text-green-400 font-medium flex items-center gap-1">
+                    <span>✓</span> Proof submitted by customer
+                  </span>
+                  <a
+                    href={existing.payment_proof_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-primary hover:underline underline-offset-2"
+                  >
+                    Open full size ↗
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isEdit && !existing?.payment_proof_url && (
+            <div>
+              <label className="text-sm font-medium">Payment Proof</label>
+              <p className="mt-1.5 text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-2 border border-dashed">
+                No proof uploaded yet by the customer.
+              </p>
+            </div>
+          )}
 
           {/* Status (edit only) */}
           {isEdit && (
@@ -810,7 +854,7 @@ export default function AdminDashboard({
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-muted/50">
-                        {["Date","Time","Court","Name","Email","Phone","Status"].map((h) => (
+                        {["Date","Time","Court","Name","Email","Phone","Proof","Status"].map((h) => (
                           <th key={h} className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">
                             {h}
                           </th>
@@ -852,6 +896,20 @@ export default function AdminDashboard({
                             </a>
                           </td>
                           <td className="px-4 py-3 text-muted-foreground">{b.phone}</td>
+                          <td className="px-4 py-3">
+                            {b.payment_proof_url ? (
+                              <a
+                                href={b.payment_proof_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline underline-offset-2 font-medium"
+                              >
+                                <span className="text-green-600">✓</span> View ↗
+                              </a>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3">
                             <span
                               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
