@@ -25,7 +25,7 @@ function courtPrice(court: number): number {
 }
 
 const TIME_SLOTS: string[] = [];
-for (let h = 6; h < 22; h++) {
+for (let h = 9; h < 24; h++) {
   TIME_SLOTS.push(`${h.toString().padStart(2, "0")}:00`);
 }
 
@@ -38,6 +38,7 @@ function formatTime(t: string) {
 
 function formatEndTime(startTime: string) {
   const h = parseInt(startTime.split(":")[0], 10);
+  if (h === 23) return "12:00 MN";
   return formatTime(`${(h + 1).toString().padStart(2, "0")}:00`);
 }
 
@@ -270,52 +271,7 @@ function ConfirmedProofUpload({ bookingIds }: { bookingIds: string[] }) {
 }
 
 // ─── Component ────────────────────────────────────────────────
-// ─── Booking Closed Gate ──────────────────────────────────────
-const BOOKING_OPENS = new Date("2026-05-01T00:00:00+08:00"); // PHT
-
-function BookingClosedNotice() {
-  return (
-    <div className="max-w-md space-y-6">
-      <Card className="border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950">
-        <CardHeader>
-          <Badge
-            variant="outline"
-            className="w-fit border-orange-400 text-orange-700 dark:text-orange-300"
-          >
-            🔒 Fully Booked
-          </Badge>
-          <CardTitle className="text-orange-800 dark:text-orange-200">
-            We&apos;re fully booked until April 30
-          </CardTitle>
-          <CardDescription className="text-orange-700 dark:text-orange-400">
-            Thank you for your interest in Badminton District! We are currently
-            at full capacity and are not accepting new bookings at this time.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm text-orange-800 dark:text-orange-200">
-          <div className="flex items-center gap-3 rounded-lg bg-white/70 dark:bg-black/20 border border-orange-200 dark:border-orange-700 px-4 py-3">
-            <span className="text-2xl">🗓️</span>
-            <div>
-              <p className="font-semibold">New slots open on May 1, 2026</p>
-              <p className="text-xs text-orange-600 dark:text-orange-400 mt-0.5">
-                Come back on May 1 to secure your court
-              </p>
-            </div>
-          </div>
-          <p className="text-xs text-orange-600 dark:text-orange-400">
-            Follow us on social media or check back here on May 1 to book your session.
-          </p>
-        </CardContent>
-      </Card>
-      <Button asChild variant="outline">
-        <a href="/">← Back to site</a>
-      </Button>
-    </div>
-  );
-}
-
-// ─── Inner component (holds all hooks) ───────────────────────
-function BookingPageInner() {
+export default function BookingPage() {
   const [step, setStep] = useState<Step>("date");
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
@@ -836,10 +792,3 @@ function BookingPageInner() {
   );
 }
 
-// ─── Public export — gates on booking open date ───────────────
-export default function BookingPage() {
-  if (new Date() < BOOKING_OPENS) {
-    return <BookingClosedNotice />;
-  }
-  return <BookingPageInner />;
-}

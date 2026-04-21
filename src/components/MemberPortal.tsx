@@ -16,7 +16,7 @@ import {
 // ─── Constants ────────────────────────────────────────────────
 const COURTS = [1, 2, 3];
 const TIME_SLOTS: string[] = [];
-for (let h = 6; h < 22; h++)
+for (let h = 9; h < 24; h++)
   TIME_SLOTS.push(`${h.toString().padStart(2, "0")}:00`);
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -29,6 +29,7 @@ function formatTime(t: string) {
 
 function formatEndTime(startTime: string) {
   const [h] = startTime.split(":").map(Number);
+  if (h === 23) return "12:00 MN";
   return formatTime(`${(h + 1).toString().padStart(2, "0")}:00`);
 }
 
