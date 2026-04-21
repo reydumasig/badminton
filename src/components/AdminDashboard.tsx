@@ -105,6 +105,7 @@ const statusColors: Record<string, string> = {
   declined: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   read: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
   replied: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  tentative: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
   confirmed: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   cancelled: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   blocked: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
@@ -488,6 +489,7 @@ function BookingModal({
                 onChange={(e) => setStatus(e.target.value)}
                 className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               >
+                <option value="tentative">Tentative</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="cancelled">Cancelled</option>
                 <option value="blocked">Blocked</option>
@@ -860,7 +862,7 @@ export default function AdminDashboard({
     router.refresh();
   };
 
-  const activeBookings = bookings.filter((b) => b.status === "confirmed");
+  const activeBookings = bookings.filter((b) => b.status === "confirmed" || b.status === "tentative");
 
   const TABS: Array<{ key: typeof tab; label: string }> = [
     { key: "calendar",    label: "📅 Calendar" },

@@ -39,6 +39,13 @@ export async function POST(req: NextRequest) {
       userId?: string;
     };
 
+    if (!userId) {
+      return NextResponse.json(
+        { error: "You must be signed in to make a booking." },
+        { status: 401 }
+      );
+    }
+
     if (
       !date ||
       !Array.isArray(slots) ||
@@ -69,8 +76,8 @@ export async function POST(req: NextRequest) {
       name,
       email,
       phone,
-      status: "confirmed",
-      ...(userId ? { user_id: userId } : {}),
+      status: "tentative",
+      user_id: userId,
     }));
 
     const { data, error } = await supabase
@@ -101,6 +108,14 @@ export async function POST(req: NextRequest) {
     // Per-court pricing: Court 1 & 2 → ₱320/hr, Court 3 → ₱300/hr
     const courtPrice = (courtNumber: number) => courtNumber === 3 ? 300 : 320;
     const total = slots.reduce((sum, s) => sum + courtPrice(s.courtNumber), 0);
+
+    // Payment policy: weekday = 50% min, weekend/holiday = full
+    const dayOfWeek  = new Date(date + "T00:00:00").getDay();
+    const isWeekend  = dayOfWeek === 0 || dayOfWeek === 6;
+    const amountDue  = isWeekend ? total : Math.ceil(total * 0.5);
+    const paymentNote = isWeekend
+      ? `Full payment of ₱${total.toLocaleString()} is required (weekend/holiday rate).`
+      : `Minimum 50% down payment of ₱${amountDue.toLocaleString()} is required now. Remaining ₱${(total - amountDue).toLocaleString()} due at venue.`;
 
     // Build the slots table for emails
     const slotRows = slots
@@ -150,14 +165,17 @@ export async function POST(req: NextRequest) {
         resend.emails.send({
           from: "Badminton District <onboarding@resend.dev>",
           to: [email],
-          subject: `Court Booking${slots.length > 1 ? "s" : ""} Confirmed – ${formattedDate}`,
+          subject: `Slot Reserved – Payment Required · ${formattedDate}`,
           html: `
             <div style="font-family:sans-serif;max-width:560px;margin:0 auto;">
-              <h2 style="color:#111;">Your Booking${slots.length > 1 ? "s are" : " is"} Confirmed! ✓</h2>
-              <p style="color:#555;">Hi ${name}, your court booking${slots.length > 1 ? "s" : ""} at Badminton District ${slots.length > 1 ? "have" : "has"} been confirmed. Please settle payment upon arrival.</p>
+              <h2 style="color:#92400e;">⏳ Your Slot is Tentatively Reserved</h2>
+              <p style="color:#555;">Hi ${name}, your slot at Badminton District has been reserved but is <strong>pending payment</strong>. Please complete payment within <strong>1 hour</strong> or your slot will be automatically released.</p>
               ${bookingTable}
-              <div style="background:#f0fdf4;border-radius:8px;padding:12px 16px;margin-top:16px;font-size:13px;color:#166534;">
-                💳 Payment is due at the venue. Please bring this confirmation.
+              <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;margin-top:16px;font-size:13px;color:#92400e;">
+                <strong>💳 Payment Required:</strong> ${paymentNote}<br/><br/>
+                <strong>⚠️ Deadline:</strong> Within 1 hour of this booking.<br/><br/>
+                Pay via <strong>RCBC InstaPay</strong> (Grace Dizer · ****9527) or <strong>GCash</strong> (0927 222 ····), then upload your proof of payment at:<br/>
+                <a href="https://www.badmintonph.com/dashboard" style="color:#d97706;">badmintonph.com/dashboard</a>
               </div>
               <hr style="margin:24px 0;border:none;border-top:1px solid #eee;"/>
               <p style="font-size:12px;color:#999;">Badminton District · Block 1 Lot 2 Loresville Drive, Lores Farm Subdivision, Barangay San Roque, Antipolo</p>
