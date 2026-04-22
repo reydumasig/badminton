@@ -65,38 +65,28 @@ function slotKey(court: number, time: string) {
   return `${court}::${time}`;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────
-function isWeekend(dateStr: string) {
-  const day = new Date(dateStr + "T00:00:00").getDay(); // 0=Sun, 6=Sat
-  return day === 0 || day === 6;
-}
-
-function requiredPayment(total: number, weekend: boolean) {
-  return weekend ? total : Math.ceil(total * 0.5);
-}
-
 // ─── Types ────────────────────────────────────────────────────
-const bookingSchema = z.object({
-  name:  z.string().min(2, "Please enter your full name."),
+const guestSchema = z.object({
+  name: z.string().min(2, "Please enter your full name."),
   email: z.string().email("Please enter a valid email."),
   phone: z.string().min(7, "Please enter a valid phone number."),
 });
-type BookingData = z.infer<typeof bookingSchema>;
+type GuestData = z.infer<typeof guestSchema>;
 
 type BookedSlot = { court: number; time: string };
 type SelectedSlot = { court: number; time: string };
 type Step = "date" | "slot" | "details" | "confirmed";
 
 // ─── Payment QR Codes Card ────────────────────────────────────
-function PaymentQRCodes({ note }: { note?: string }) {
+function PaymentQRCodes() {
   return (
     <Card className="max-w-md border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-bold text-yellow-900 dark:text-yellow-100">
-          💳 Pay via InstaPay / GCash
+          💳 Payment via InstaPay / GCash
         </CardTitle>
         <CardDescription className="text-yellow-700 dark:text-yellow-400">
-          {note ?? "Scan a QR code to send your payment, then upload the screenshot below."}
+          Scan a QR code below to pay in advance, then upload your proof of payment after booking.
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
@@ -133,7 +123,7 @@ function PaymentQRCodes({ note }: { note?: string }) {
           </div>
         </div>
         <p className="mt-3 text-[11px] text-yellow-600 dark:text-yellow-500 text-center">
-          Transfer fees may apply. Upload your payment screenshot to confirm your slot.
+          After confirming your booking you&apos;ll be able to upload your payment screenshot.
         </p>
       </CardContent>
     </Card>
@@ -292,26 +282,17 @@ export default function BookingPage() {
   const [confirmedSlots, setConfirmedSlots] = useState<SelectedSlot[]>([]);
   const [bookingIds, setBookingIds] = useState<string[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string>("");
-  const [userLoaded, setUserLoaded] = useState(false);
 
   useEffect(() => {
     const supabase = createAuthBrowserClient();
     supabase.auth.getUser().then(({ data }) => {
       setUserId(data.user?.id ?? null);
-      setUserEmail(data.user?.email ?? "");
-      setUserLoaded(true);
     });
   }, []);
 
-  const { register, handleSubmit, setValue, formState: { errors } } = useForm<BookingData>({
-    resolver: zodResolver(bookingSchema),
+  const { register, handleSubmit, formState: { errors } } = useForm<GuestData>({
+    resolver: zodResolver(guestSchema),
   });
-
-  // Pre-fill email once user loads
-  useEffect(() => {
-    if (userEmail) setValue("email", userEmail);
-  }, [userEmail, setValue]);
 
   const fetchAvailability = useCallback(async (date: string) => {
     setLoadingSlots(true);
@@ -381,7 +362,7 @@ export default function BookingPage() {
     setStep("details");
   };
 
-  const onSubmit = async (data: BookingData) => {
+  const onSubmit = async (data: GuestData) => {
     setSubmitting(true);
     setSubmitError("");
     const slots = getSelectedSlotsList();
@@ -413,29 +394,6 @@ export default function BookingPage() {
       setSubmitting(false);
     }
   };
-
-  // ── Guest gate ─────────────────────────────────────────────
-  if (userLoaded && !userId) {
-    return (
-      <div className="max-w-md space-y-4">
-        <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
-          <CardHeader>
-            <Badge variant="outline" className="w-fit border-blue-400 text-blue-700 dark:text-blue-300">
-              🔐 Sign In Required
-            </Badge>
-            <CardTitle className="text-blue-900 dark:text-blue-100">Create an account to book</CardTitle>
-            <CardDescription className="text-blue-700 dark:text-blue-400">
-              You need a Badminton District account to reserve a court. Sign up — it&apos;s free and takes under a minute.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex gap-3">
-            <Button asChild className="flex-1"><a href="/login">Sign In</a></Button>
-            <Button asChild variant="outline" className="flex-1"><a href="/signup">Create Account</a></Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   // ── Step: Date ─────────────────────────────────────────────
   if (step === "date") {
@@ -629,10 +587,7 @@ export default function BookingPage() {
 
   // ── Step: Details ──────────────────────────────────────────
   if (step === "details") {
-    const slotsList  = getSelectedSlotsList();
-    const weekend    = isWeekend(selectedDate);
-    const amountDue  = requiredPayment(totalPrice, weekend);
-
+    const slotsList = getSelectedSlotsList();
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -661,7 +616,9 @@ export default function BookingPage() {
                 key={slotKey(s.court, s.time)}
                 className="flex justify-between text-sm text-blue-900 dark:text-blue-100"
               >
-                <span>Court {s.court} · {formatTime(s.time)}–{formatEndTime(s.time)}</span>
+                <span>
+                  Court {s.court} · {formatTime(s.time)}–{formatEndTime(s.time)}
+                </span>
                 <span className="font-medium">₱{courtPrice(s.court)}</span>
               </div>
             ))}
@@ -672,35 +629,16 @@ export default function BookingPage() {
           </CardContent>
         </Card>
 
-        {/* Payment Policy */}
-        <Card className="max-w-md border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-bold text-amber-900 dark:text-amber-100">
-              ⚠️ Payment Required Within 1 Hour
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 pt-0 text-sm text-amber-800 dark:text-amber-200">
-            <p>Your booking will be <strong>tentative</strong> until payment is received. Slots are released if payment is not submitted within 1 hour.</p>
-            <div className="rounded-md bg-white/60 dark:bg-black/20 border border-amber-200 dark:border-amber-700 px-3 py-2 font-semibold">
-              {weekend
-                ? "🗓️ Weekend/Holiday — Full payment required"
-                : "🗓️ Weekday — Minimum 50% down payment required"}
-            </div>
-            <div className="flex justify-between text-amber-900 dark:text-amber-100 font-bold pt-1">
-              <span>Amount due now</span>
-              <span>₱{amountDue.toLocaleString()}{!weekend && ` (of ₱${totalPrice.toLocaleString()})`}</span>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Payment QR Codes */}
-        <PaymentQRCodes note="Scan to pay, then upload your receipt after booking to confirm your slot." />
+        <PaymentQRCodes />
 
         {/* Contact Form */}
         <Card className="max-w-md">
           <CardHeader>
-            <CardTitle className="text-base">Your Details</CardTitle>
-            <CardDescription>Booking confirmation will be sent to your registered email.</CardDescription>
+            <CardTitle className="text-base">Contact Information</CardTitle>
+            <CardDescription>
+              We&apos;ll send your confirmation to this email.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -708,30 +646,62 @@ export default function BookingPage() {
                 <label className="text-sm font-medium">
                   Full Name <span className="text-destructive">*</span>
                 </label>
-                <Input placeholder="Your full name" className="mt-2" {...register("name")} />
-                {errors.name && <p className="mt-1 text-xs text-destructive">{errors.name.message}</p>}
+                <Input
+                  placeholder="Your full name"
+                  className="mt-2"
+                  {...register("name")}
+                />
+                {errors.name && (
+                  <p className="mt-1 text-xs text-destructive">
+                    {errors.name.message}
+                  </p>
+                )}
               </div>
               <div>
-                <label className="text-sm font-medium">Email</label>
+                <label className="text-sm font-medium">
+                  Email <span className="text-destructive">*</span>
+                </label>
                 <Input
                   type="email"
-                  className="mt-2 bg-muted cursor-not-allowed"
-                  readOnly
+                  placeholder="you@email.com"
+                  className="mt-2"
                   {...register("email")}
                 />
+                {errors.email && (
+                  <p className="mt-1 text-xs text-destructive">
+                    {errors.email.message}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-sm font-medium">
                   Phone <span className="text-destructive">*</span>
                 </label>
-                <Input type="tel" placeholder="+63..." className="mt-2" {...register("phone")} />
-                {errors.phone && <p className="mt-1 text-xs text-destructive">{errors.phone.message}</p>}
+                <Input
+                  type="tel"
+                  placeholder="+63..."
+                  className="mt-2"
+                  {...register("phone")}
+                />
+                {errors.phone && (
+                  <p className="mt-1 text-xs text-destructive">
+                    {errors.phone.message}
+                  </p>
+                )}
               </div>
               {submitError && (
-                <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{submitError}</p>
+                <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  {submitError}
+                </p>
               )}
-              <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting ? "Reserving…" : `Reserve ${slotsList.length} Slot${slotsList.length > 1 ? "s" : ""} · ₱${totalPrice.toLocaleString()}`}
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={submitting}
+              >
+                {submitting
+                  ? "Confirming…"
+                  : `Confirm ${slotsList.length} Booking${slotsList.length > 1 ? "s" : ""} · ₱${totalPrice.toLocaleString()}`}
               </Button>
             </form>
           </CardContent>
@@ -740,57 +710,64 @@ export default function BookingPage() {
     );
   }
 
-  // ── Step: Confirmed (Tentative) ───────────────────────────
-  const confirmedTotal  = confirmedSlots.reduce((sum, s) => sum + courtPrice(s.court), 0);
-  const weekend         = isWeekend(selectedDate);
-  const amountDue       = requiredPayment(confirmedTotal, weekend);
-
+  // ── Step: Confirmed ────────────────────────────────────────
+  const confirmedTotal = confirmedSlots.reduce((sum, s) => sum + courtPrice(s.court), 0);
   return (
     <div className="space-y-6 max-w-md">
-      {/* Tentative notice */}
-      <Card className="border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950">
+      {/* Confirmation card */}
+      <Card className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950">
         <CardHeader>
-          <Badge variant="outline" className="w-fit border-amber-500 text-amber-700 dark:text-amber-300">
-            ⏳ Tentative
+          <Badge
+            variant="outline"
+            className="w-fit border-green-400 text-green-700 dark:text-green-300"
+          >
+            ✓ Confirmed
           </Badge>
-          <CardTitle className="text-amber-900 dark:text-amber-100">
-            {confirmedSlots.length > 1 ? `${confirmedSlots.length} Slots Reserved` : "Slot Reserved"}
+          <CardTitle className="text-green-800 dark:text-green-200">
+            {confirmedSlots.length > 1
+              ? `${confirmedSlots.length} Bookings Confirmed!`
+              : "Booking Confirmed!"}
           </CardTitle>
-          <CardDescription className="text-amber-700 dark:text-amber-400">
-            Your slot is tentatively held. Upload proof of payment within <strong>1 hour</strong> to confirm — otherwise it will be automatically released.
+          <CardDescription className="text-green-700 dark:text-green-300">
+            A confirmation has been sent to your email.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <p className="font-semibold text-amber-900 dark:text-amber-100">{formatDateDisplay(selectedDate)}</p>
+          <p className="font-semibold text-green-800 dark:text-green-200">
+            {formatDateDisplay(selectedDate)}
+          </p>
           <div className="space-y-2">
             {confirmedSlots.map((s, i) => (
-              <div key={i} className="flex justify-between text-amber-800 dark:text-amber-200 bg-white/60 dark:bg-black/10 rounded-md px-3 py-2">
-                <span>Court {s.court} · {formatTime(s.time)}–{formatEndTime(s.time)}</span>
+              <div
+                key={i}
+                className="flex justify-between text-green-800 dark:text-green-200 bg-white/60 dark:bg-black/10 rounded-md px-3 py-2"
+              >
+                <span>
+                  Court {s.court} · {formatTime(s.time)}–{formatEndTime(s.time)}
+                </span>
                 <span className="font-medium">₱{courtPrice(s.court)}</span>
               </div>
             ))}
           </div>
-          <div className="flex justify-between font-bold text-amber-900 dark:text-amber-100 pt-1 border-t border-amber-200 dark:border-amber-700">
+          <div className="flex justify-between font-bold text-green-900 dark:text-green-100 pt-1 border-t border-green-200 dark:border-green-700">
             <span>Total</span>
             <span>₱{confirmedTotal.toLocaleString()}</span>
           </div>
-          <div className="rounded-md bg-white/70 dark:bg-black/20 border border-amber-200 dark:border-amber-700 px-3 py-2 font-semibold text-amber-900 dark:text-amber-100">
-            {weekend
-              ? `💳 Full payment due: ₱${amountDue.toLocaleString()}`
-              : `💳 Min. 50% down payment due: ₱${amountDue.toLocaleString()} (of ₱${confirmedTotal.toLocaleString()})`}
-          </div>
           {bookingIds.length > 0 && (
-            <p className="text-xs text-amber-600 dark:text-amber-400">Ref: {bookingIds[0].split("-")[0].toUpperCase()}</p>
+            <p className="text-xs text-green-600 dark:text-green-400">
+              Ref: {bookingIds[0].split("-")[0].toUpperCase()}
+            </p>
           )}
         </CardContent>
       </Card>
 
-      {/* Payment QR + proof upload */}
-      <PaymentQRCodes note="Scan to pay now, then upload your screenshot below to confirm your booking." />
-
+      {/* Proof of payment upload (logged-in users with booking IDs) */}
       {userId && bookingIds.length > 0 && (
         <ConfirmedProofUpload bookingIds={bookingIds} />
       )}
+
+      {/* QR codes reminder for guests who haven't paid yet */}
+      {!userId && <PaymentQRCodes />}
 
       <div className="flex gap-3 flex-wrap">
         <Button
@@ -805,9 +782,11 @@ export default function BookingPage() {
         >
           Book Another
         </Button>
-        <Button asChild variant="outline">
-          <a href="/dashboard">My Bookings</a>
-        </Button>
+        {userId && (
+          <Button asChild variant="outline">
+            <a href="/dashboard">View My Bookings</a>
+          </Button>
+        )}
       </div>
     </div>
   );

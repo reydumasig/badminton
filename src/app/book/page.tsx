@@ -2,7 +2,7 @@ import BookingPage from "@/components/BookingPage";
 
 export const metadata = {
   title: "Book a Court – Badminton District",
-  description: "Reserve a badminton court at Badminton District. 3 courts available, 6AM–10PM daily.",
+  description: "Reserve a badminton court at Badminton District. 3 courts available, 9AM–12MN daily.",
 };
 
 export default function Book() {
@@ -26,7 +26,7 @@ export default function Book() {
         <div className="space-y-1 mb-8">
           <h1 className="text-3xl font-semibold tracking-tight">Book a Court</h1>
           <p className="text-muted-foreground">
-            3 indoor courts · 6AM–10PM daily · Pay at venue
+            3 indoor courts · 9AM–12MN daily · Pay at venue
           </p>
         </div>
         <BookingPage />

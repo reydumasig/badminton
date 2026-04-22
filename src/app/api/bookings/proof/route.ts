@@ -114,13 +114,9 @@ export async function POST(req: NextRequest) {
       .from(BUCKET)
       .getPublicUrl(uploadData.path);
 
-    // Save proof URL and promote tentative → confirmed
     const { error: updateError } = await supabase
       .from("bookings")
-      .update({
-        payment_proof_url: publicUrl,
-        ...(booking.status === "tentative" ? { status: "confirmed" } : {}),
-      })
+      .update({ payment_proof_url: publicUrl })
       .eq("id", bookingId);
 
     if (updateError) {

@@ -49,8 +49,8 @@ export async function GET(req: NextRequest) {
 
   const results = await Promise.allSettled(
     bookings.map((b) => {
-      const endH = parseInt(b.start_time.split(":")[0], 10) + 1;
-      const endTime = endH >= 24 ? "12:00 MN" : `${endH.toString().padStart(2, "0")}:00`;
+      const endH = parseInt(b.start_time) + 1;
+      const endTime = `${endH.toString().padStart(2, "0")}:00`;
       const dateDisplay = new Date(b.date + "T00:00:00").toLocaleDateString("en-PH", {
         weekday: "long",
         month: "long",
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
             <p style="color:#555;">Hi ${b.name}, this is a reminder for your court booking tomorrow.</p>
             <table style="width:100%;border-collapse:collapse;font-size:14px;margin:16px 0;">
               <tr><td style="padding:8px 0;color:#555;width:120px;"><strong>Date</strong></td><td>${dateDisplay}</td></tr>
-              <tr><td style="padding:8px 0;color:#555;"><strong>Time</strong></td><td>${formatTime(b.start_time)} – ${endTime === "12:00 MN" ? endTime : formatTime(endTime)}</td></tr>
+              <tr><td style="padding:8px 0;color:#555;"><strong>Time</strong></td><td>${formatTime(b.start_time)} – ${formatTime(endTime)}</td></tr>
               <tr><td style="padding:8px 0;color:#555;"><strong>Court</strong></td><td>Court ${b.court_number}</td></tr>
             </table>
             <p style="color:#555;">Please bring proper non-marking indoor badminton shoes. Payment is due at the venue.</p>
