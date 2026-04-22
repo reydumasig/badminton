@@ -1,4 +1,7 @@
 {
+  "installCommand": "npm install",
+  "buildCommand": "next build",
+  "framework": "nextjs",
   "crons": [
     {
       "path": "/api/cron/reminders",
