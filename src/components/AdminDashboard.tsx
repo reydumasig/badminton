@@ -974,7 +974,7 @@ function AdminCalendar({
 }
 
 // ─── Sales / Revenue Dashboard ───────────────────────────────
-type RevPeriod = "day" | "week" | "month" | "quarter" | "year";
+type RevPeriod = "day" | "week" | "month" | "quarter" | "year" | "custom";
 
 function courtRevenue(b: Booking): number {
   return b.court_number === 3 ? 300 : 320;
@@ -984,7 +984,7 @@ function dateStr(d: Date): string {
   return d.toISOString().split("T")[0];
 }
 
-function getPeriodRange(period: RevPeriod) {
+function getPeriodRange(period: Exclude<RevPeriod, "custom">): { start: Date; end: Date; prevStart: Date; prevEnd: Date } {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const MS = 86400000;
@@ -1026,6 +1026,11 @@ function getPeriodRange(period: RevPeriod) {
       end: new Date(now.getFullYear(), 11, 31),
       prevStart: new Date(now.getFullYear() - 1, 0, 1),
       prevEnd: new Date(now.getFullYear() - 1, 11, 31),
+    };
+    default: return {
+      start: today, end: today,
+      prevStart: new Date(today.getTime() - 86400000),
+      prevEnd: new Date(today.getTime() - 86400000),
     };
   }
 }
@@ -1080,14 +1085,97 @@ function getChartBuckets(bookings: Booking[], period: RevPeriod): Array<{ label:
         const end   = dateStr(new Date(now.getFullYear(), i + 1, 0));
         return { label: MONTH_NAMES[i].slice(0, 3), value: rev(bookings.filter((b) => b.date >= start && b.date <= end)) };
       });
+    default:
+      return [];
+  }
+}
+
+// Auto-bucketed chart for arbitrary date ranges
+function getCustomChartBuckets(
+  bookings: Booking[],
+  fromISO: string,
+  toISO: string
+): Array<{ label: string; value: number }> {
+  const rev = (bList: Booking[]) => bList.reduce((s, b) => s + courtRevenue(b), 0);
+  const MS = 86400000;
+  const fromDate = new Date(fromISO + "T00:00:00");
+  const toDate   = new Date(toISO   + "T00:00:00");
+  const spanDays = Math.round((toDate.getTime() - fromDate.getTime()) / MS) + 1;
+
+  if (spanDays <= 14) {
+    // Daily buckets
+    return Array.from({ length: spanDays }, (_, i) => {
+      const d = new Date(fromDate.getTime() + i * MS);
+      const iso = dateStr(d);
+      return {
+        label: d.toLocaleDateString("en-PH", { month: "short", day: "numeric" }),
+        value: rev(bookings.filter((b) => b.date === iso)),
+      };
+    });
+  } else if (spanDays <= 90) {
+    // Weekly buckets (Mon-Sun groups)
+    const buckets: Array<{ label: string; value: number }> = [];
+    let cur = new Date(fromDate);
+    // Align to Monday
+    const dowOffset = cur.getDay() === 0 ? 6 : cur.getDay() - 1;
+    cur = new Date(cur.getTime() - dowOffset * MS);
+    while (cur <= toDate) {
+      const weekStart = new Date(Math.max(cur.getTime(), fromDate.getTime()));
+      const weekEnd   = new Date(Math.min(cur.getTime() + 6 * MS, toDate.getTime()));
+      const s = dateStr(weekStart), e = dateStr(weekEnd);
+      buckets.push({
+        label: weekStart.toLocaleDateString("en-PH", { month: "short", day: "numeric" }),
+        value: rev(bookings.filter((b) => b.date >= s && b.date <= e)),
+      });
+      cur = new Date(cur.getTime() + 7 * MS);
+    }
+    return buckets;
+  } else {
+    // Monthly buckets
+    const buckets: Array<{ label: string; value: number }> = [];
+    let y = fromDate.getFullYear(), m = fromDate.getMonth();
+    const endY = toDate.getFullYear(), endM = toDate.getMonth();
+    while (y < endY || (y === endY && m <= endM)) {
+      const start = `${y}-${(m + 1).toString().padStart(2, "0")}-01`;
+      const end   = dateStr(new Date(y, m + 1, 0));
+      const s = start > fromISO ? start : fromISO;
+      const e = end   < toISO   ? end   : toISO;
+      buckets.push({
+        label: MONTH_NAMES[m].slice(0, 3) + (y !== new Date().getFullYear() ? ` '${String(y).slice(2)}` : ""),
+        value: rev(bookings.filter((b) => b.date >= s && b.date <= e)),
+      });
+      m++;
+      if (m > 11) { m = 0; y++; }
+    }
+    return buckets;
   }
 }
 
 function SalesDashboard({ bookings }: { bookings: Booking[] }) {
   const [period, setPeriod] = useState<RevPeriod>("month");
 
+  // Default custom range = last 30 days
+  const defaultTo   = dateStr(new Date());
+  const defaultFrom = dateStr(new Date(Date.now() - 29 * 86400000));
+  const [customFrom, setCustomFrom] = useState(defaultFrom);
+  const [customTo,   setCustomTo  ] = useState(defaultTo);
+
   const confirmed = bookings.filter((b) => b.status === "confirmed");
-  const { start, end, prevStart, prevEnd } = getPeriodRange(period);
+
+  // Resolve current window + comparison window
+  const range = (() => {
+    if (period === "custom") {
+      const s   = new Date(customFrom + "T00:00:00");
+      const e   = new Date(customTo   + "T00:00:00");
+      const spanMs = e.getTime() - s.getTime() + 86400000;
+      const pE  = new Date(s.getTime() - 86400000);
+      const pS  = new Date(pE.getTime() - spanMs + 86400000);
+      return { start: s, end: e, prevStart: pS, prevEnd: pE };
+    }
+    return getPeriodRange(period as Exclude<RevPeriod, "custom">);
+  })();
+  const { start, end, prevStart, prevEnd } = range;
+
   const cur  = filterByRange(confirmed, start, end);
   const prev = filterByRange(confirmed, prevStart, prevEnd);
 
@@ -1104,8 +1192,10 @@ function SalesDashboard({ bookings }: { bookings: Booking[] }) {
     revenue: cur.filter((b) => b.court_number === c).reduce((s, b) => s + courtRevenue(b), 0),
   }));
 
-  const chartData = getChartBuckets(cur, period);
-  const maxVal    = Math.max(...chartData.map((d) => d.value), 1);
+  const chartData = period === "custom"
+    ? getCustomChartBuckets(cur, customFrom, customTo)
+    : getChartBuckets(cur, period);
+  const maxVal = Math.max(...chartData.map((d) => d.value), 1);
 
   const PERIOD_OPTS: Array<{ key: RevPeriod; label: string }> = [
     { key: "day",     label: "Today" },
@@ -1113,9 +1203,11 @@ function SalesDashboard({ bookings }: { bookings: Booking[] }) {
     { key: "month",   label: "This Month" },
     { key: "quarter", label: "This Quarter" },
     { key: "year",    label: "This Year" },
+    { key: "custom",  label: "Custom Range" },
   ];
 
   const now = new Date();
+  const fmtShort = (d: Date) => d.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
   const periodLabel = (() => {
     switch (period) {
       case "day":     return now.toLocaleDateString("en-PH", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
@@ -1123,6 +1215,7 @@ function SalesDashboard({ bookings }: { bookings: Booking[] }) {
       case "month":   return now.toLocaleDateString("en-PH", { month: "long", year: "numeric" });
       case "quarter": return `Q${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
       case "year":    return `${now.getFullYear()}`;
+      case "custom":  return `${fmtShort(start)} – ${fmtShort(end)}`;
     }
   })();
 
@@ -1143,8 +1236,58 @@ function SalesDashboard({ bookings }: { bookings: Booking[] }) {
             {label}
           </button>
         ))}
-        <span className="ml-auto text-sm text-muted-foreground hidden sm:block">{periodLabel}</span>
+        {period !== "custom" && (
+          <span className="ml-auto text-sm text-muted-foreground hidden sm:block">{periodLabel}</span>
+        )}
       </div>
+
+      {/* Custom date range inputs */}
+      {period === "custom" && (
+        <div className="flex flex-wrap items-end gap-3 p-4 bg-muted/40 rounded-lg border border-border/60">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground font-medium">From</label>
+            <input
+              type="date"
+              value={customFrom}
+              max={customTo}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground font-medium">To</label>
+            <input
+              type="date"
+              value={customTo}
+              min={customFrom}
+              max={dateStr(new Date())}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+          <div className="flex gap-2 pb-0.5">
+            <button
+              onClick={() => { setCustomFrom(dateStr(new Date(Date.now() - 6 * 86400000))); setCustomTo(defaultTo); }}
+              className="px-3 py-1.5 rounded-md text-xs border border-border hover:bg-muted transition-colors"
+            >
+              Last 7 days
+            </button>
+            <button
+              onClick={() => { setCustomFrom(dateStr(new Date(Date.now() - 29 * 86400000))); setCustomTo(defaultTo); }}
+              className="px-3 py-1.5 rounded-md text-xs border border-border hover:bg-muted transition-colors"
+            >
+              Last 30 days
+            </button>
+            <button
+              onClick={() => { setCustomFrom(dateStr(new Date(Date.now() - 89 * 86400000))); setCustomTo(defaultTo); }}
+              className="px-3 py-1.5 rounded-md text-xs border border-border hover:bg-muted transition-colors"
+            >
+              Last 90 days
+            </button>
+          </div>
+          <span className="ml-auto text-xs text-muted-foreground hidden sm:block self-end pb-0.5">{periodLabel}</span>
+        </div>
+      )}
 
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-3">
