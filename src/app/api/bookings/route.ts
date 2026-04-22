@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createServerClient } from "@/lib/supabase";
+import { createAuthServerClient } from "@/lib/supabase-auth-server";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -29,22 +30,25 @@ type SlotInput = { courtNumber: number; startTime: string };
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { date, slots, name, email, phone, userId } = body as {
-      date: string;
-      slots: SlotInput[];
-      name: string;
-      email: string;
-      phone: string;
-      userId?: string;
-    };
-
-    if (!userId) {
+    // Verify the user's identity server-side via JWT — never trust userId from the body
+    const supabaseAuth = await createAuthServerClient();
+    const { data: { user } } = await supabaseAuth.auth.getUser();
+    if (!user) {
       return NextResponse.json(
         { error: "You must be signed in to make a booking." },
         { status: 401 }
       );
     }
+    const userId = user.id;
+
+    const body = await req.json();
+    const { date, slots, name, email, phone } = body as {
+      date: string;
+      slots: SlotInput[];
+      name: string;
+      email: string;
+      phone: string;
+    };
 
     if (
       !date ||

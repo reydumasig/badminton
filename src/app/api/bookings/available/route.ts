@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     .from("bookings")
     .select("court_number, start_time")
     .eq("date", date)
-    .eq("status", "confirmed");
+    .in("status", ["confirmed", "tentative"]);
 
   if (error) {
     return NextResponse.json({ error: "Failed to fetch availability." }, { status: 500 });
