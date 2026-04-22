@@ -26,7 +26,7 @@ export default function Book() {
         <div className="space-y-1 mb-8">
           <h1 className="text-3xl font-semibold tracking-tight">Book a Court</h1>
           <p className="text-muted-foreground">
-            3 indoor courts · 9AM–12MN daily · Pay at venue
+            3 indoor courts · 9AM–12MN daily · Online payment required
           </p>
         </div>
         <BookingPage />
