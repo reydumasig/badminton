@@ -973,6 +973,332 @@ function AdminCalendar({
   );
 }
 
+// ─── Sales / Revenue Dashboard ───────────────────────────────
+type RevPeriod = "day" | "week" | "month" | "quarter" | "year";
+
+function courtRevenue(b: Booking): number {
+  return b.court_number === 3 ? 300 : 320;
+}
+
+function dateStr(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
+function getPeriodRange(period: RevPeriod) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const MS = 86400000;
+
+  switch (period) {
+    case "day": return {
+      start: today,
+      end: today,
+      prevStart: new Date(today.getTime() - MS),
+      prevEnd: new Date(today.getTime() - MS),
+    };
+    case "week": {
+      const dow = today.getDay();
+      const mon = new Date(today.getTime() - (dow === 0 ? 6 : dow - 1) * MS);
+      const sun = new Date(mon.getTime() + 6 * MS);
+      return {
+        start: mon, end: sun,
+        prevStart: new Date(mon.getTime() - 7 * MS),
+        prevEnd: new Date(mon.getTime() - MS),
+      };
+    }
+    case "month": return {
+      start: new Date(now.getFullYear(), now.getMonth(), 1),
+      end: new Date(now.getFullYear(), now.getMonth() + 1, 0),
+      prevStart: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      prevEnd: new Date(now.getFullYear(), now.getMonth(), 0),
+    };
+    case "quarter": {
+      const q = Math.floor(now.getMonth() / 3);
+      return {
+        start: new Date(now.getFullYear(), q * 3, 1),
+        end: new Date(now.getFullYear(), q * 3 + 3, 0),
+        prevStart: new Date(now.getFullYear(), (q - 1) * 3, 1),
+        prevEnd: new Date(now.getFullYear(), q * 3, 0),
+      };
+    }
+    case "year": return {
+      start: new Date(now.getFullYear(), 0, 1),
+      end: new Date(now.getFullYear(), 11, 31),
+      prevStart: new Date(now.getFullYear() - 1, 0, 1),
+      prevEnd: new Date(now.getFullYear() - 1, 11, 31),
+    };
+  }
+}
+
+function filterByRange(bookings: Booking[], start: Date, end: Date): Booking[] {
+  const s = dateStr(start), e = dateStr(end);
+  return bookings.filter((b) => b.date >= s && b.date <= e);
+}
+
+function getChartBuckets(bookings: Booking[], period: RevPeriod): Array<{ label: string; value: number }> {
+  const now = new Date();
+  const rev = (bList: Booking[]) => bList.reduce((s, b) => s + courtRevenue(b), 0);
+
+  switch (period) {
+    case "day":
+      return TIME_SLOTS.map((t) => {
+        const h = parseInt(t, 10);
+        return { label: formatTime(t), value: rev(bookings.filter((b) => parseInt(b.start_time, 10) === h)) };
+      });
+
+    case "week": {
+      const dow = now.getDay();
+      const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (dow === 0 ? 6 : dow - 1));
+      return ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((label, i) => {
+        const iso = dateStr(new Date(mon.getTime() + i * 86400000));
+        return { label, value: rev(bookings.filter((b) => b.date === iso)) };
+      });
+    }
+
+    case "month": {
+      const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const mm = (now.getMonth() + 1).toString().padStart(2, "0");
+      return Array.from({ length: days }, (_, i) => {
+        const iso = `${now.getFullYear()}-${mm}-${(i + 1).toString().padStart(2, "0")}`;
+        return { label: `${i + 1}`, value: rev(bookings.filter((b) => b.date === iso)) };
+      });
+    }
+
+    case "quarter": {
+      const q = Math.floor(now.getMonth() / 3);
+      return [0, 1, 2].map((i) => {
+        const mIdx = q * 3 + i;
+        const start = `${now.getFullYear()}-${(mIdx + 1).toString().padStart(2, "0")}-01`;
+        const end   = dateStr(new Date(now.getFullYear(), mIdx + 1, 0));
+        return { label: MONTH_NAMES[mIdx].slice(0, 3), value: rev(bookings.filter((b) => b.date >= start && b.date <= end)) };
+      });
+    }
+
+    case "year":
+      return Array.from({ length: 12 }, (_, i) => {
+        const start = `${now.getFullYear()}-${(i + 1).toString().padStart(2, "0")}-01`;
+        const end   = dateStr(new Date(now.getFullYear(), i + 1, 0));
+        return { label: MONTH_NAMES[i].slice(0, 3), value: rev(bookings.filter((b) => b.date >= start && b.date <= end)) };
+      });
+  }
+}
+
+function SalesDashboard({ bookings }: { bookings: Booking[] }) {
+  const [period, setPeriod] = useState<RevPeriod>("month");
+
+  const confirmed = bookings.filter((b) => b.status === "confirmed");
+  const { start, end, prevStart, prevEnd } = getPeriodRange(period);
+  const cur  = filterByRange(confirmed, start, end);
+  const prev = filterByRange(confirmed, prevStart, prevEnd);
+
+  const totalRev   = cur.reduce((s, b) => s + courtRevenue(b), 0);
+  const prevRev    = prev.reduce((s, b) => s + courtRevenue(b), 0);
+  const revChange  = prevRev > 0 ? ((totalRev - prevRev) / prevRev) * 100 : null;
+  const totalSlots = cur.length;
+  const prevSlots  = prev.length;
+  const avgPerSlot = totalSlots > 0 ? totalRev / totalSlots : 0;
+
+  const courtStats = COURTS.map((c) => ({
+    court: c,
+    slots: cur.filter((b) => b.court_number === c).length,
+    revenue: cur.filter((b) => b.court_number === c).reduce((s, b) => s + courtRevenue(b), 0),
+  }));
+
+  const chartData = getChartBuckets(cur, period);
+  const maxVal    = Math.max(...chartData.map((d) => d.value), 1);
+
+  const PERIOD_OPTS: Array<{ key: RevPeriod; label: string }> = [
+    { key: "day",     label: "Today" },
+    { key: "week",    label: "This Week" },
+    { key: "month",   label: "This Month" },
+    { key: "quarter", label: "This Quarter" },
+    { key: "year",    label: "This Year" },
+  ];
+
+  const now = new Date();
+  const periodLabel = (() => {
+    switch (period) {
+      case "day":     return now.toLocaleDateString("en-PH", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+      case "week":    return `${start.toLocaleDateString("en-PH", { month: "short", day: "numeric" })} – ${end.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}`;
+      case "month":   return now.toLocaleDateString("en-PH", { month: "long", year: "numeric" });
+      case "quarter": return `Q${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
+      case "year":    return `${now.getFullYear()}`;
+    }
+  })();
+
+  return (
+    <div className="space-y-6">
+      {/* Period selector */}
+      <div className="flex flex-wrap items-center gap-2">
+        {PERIOD_OPTS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setPeriod(key)}
+            className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+              period === key
+                ? "bg-foreground text-background border-foreground"
+                : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/50"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        <span className="ml-auto text-sm text-muted-foreground hidden sm:block">{periodLabel}</span>
+      </div>
+
+      {/* KPI cards */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-1">
+            <CardDescription>Total Revenue</CardDescription>
+            <CardTitle className="text-3xl">₱{totalRev.toLocaleString()}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {revChange !== null ? (
+              <p className={`text-xs font-medium ${revChange >= 0 ? "text-green-600" : "text-red-500"}`}>
+                {revChange >= 0 ? "▲" : "▼"} {Math.abs(revChange).toFixed(1)}% vs prev period
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">—</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-1">
+            <CardDescription>Court-Hours Booked</CardDescription>
+            <CardTitle className="text-3xl">{totalSlots}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {prevSlots > 0 ? (
+              <p className={`text-xs font-medium ${totalSlots >= prevSlots ? "text-green-600" : "text-red-500"}`}>
+                {totalSlots >= prevSlots ? "▲" : "▼"} {Math.abs(totalSlots - prevSlots)} vs prev period
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">Confirmed only</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-1">
+            <CardDescription>Avg Revenue / Slot</CardDescription>
+            <CardTitle className="text-3xl">₱{Math.round(avgPerSlot).toLocaleString()}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">Courts 1 &amp; 2: ₱320 · Court 3: ₱300</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Bar chart */}
+      <Card>
+        <CardHeader className="pb-3 border-b">
+          <CardTitle className="text-base">Revenue Breakdown</CardTitle>
+          <CardDescription>{periodLabel}</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6 pb-4">
+          {totalRev === 0 ? (
+            <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
+              No confirmed bookings in this period
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <div
+                className="flex items-end gap-[3px]"
+                style={{ minHeight: "180px", minWidth: `${chartData.length * 30}px` }}
+              >
+                {chartData.map((d, i) => (
+                  <div
+                    key={i}
+                    className="flex flex-col items-center gap-1 flex-1 group relative"
+                    style={{ minWidth: "20px" }}
+                  >
+                    {/* Tooltip on hover */}
+                    {d.value > 0 && (
+                      <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] whitespace-nowrap bg-foreground text-background rounded px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                        ₱{d.value.toLocaleString()}
+                      </span>
+                    )}
+                    <div
+                      className="w-full rounded-t transition-all"
+                      style={{
+                        height: `${Math.max((d.value / maxVal) * 150, d.value > 0 ? 4 : 1)}px`,
+                        backgroundColor: d.value > 0 ? "#3b82f6" : "#e5e7eb",
+                        opacity: d.value > 0 ? 1 : 0.35,
+                      }}
+                    />
+                    <span
+                      className="text-[9px] text-muted-foreground leading-none truncate w-full text-center"
+                      style={{ maxWidth: "40px" }}
+                    >
+                      {d.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Court breakdown */}
+      <Card>
+        <CardHeader className="pb-3 border-b">
+          <CardTitle className="text-base">By Court</CardTitle>
+          <CardDescription>Slot count and revenue per court · {periodLabel}</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-5 pb-4 space-y-4">
+          {courtStats.map(({ court, slots, revenue }) => (
+            <div key={court} className="flex items-center gap-3">
+              <span className="flex items-center gap-1.5 text-sm font-medium w-20 shrink-0">
+                <span
+                  className="w-2.5 h-2.5 rounded-full"
+                  style={{ backgroundColor: COURT_COLORS[court - 1] }}
+                />
+                Court {court}
+              </span>
+              <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: totalSlots > 0 ? `${(slots / totalSlots) * 100}%` : "0%",
+                    backgroundColor: COURT_COLORS[court - 1],
+                  }}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground w-14 text-right shrink-0">
+                {slots} hr{slots !== 1 ? "s" : ""}
+              </span>
+              <span className="text-sm font-medium w-20 text-right shrink-0">
+                ₱{revenue.toLocaleString()}
+              </span>
+            </div>
+          ))}
+
+          {totalSlots === 0 && (
+            <p className="text-sm text-muted-foreground">No confirmed bookings this period.</p>
+          )}
+
+          {/* Total row */}
+          {totalSlots > 0 && (
+            <div className="flex items-center gap-3 pt-3 border-t">
+              <span className="text-sm font-semibold w-20 shrink-0">Total</span>
+              <div className="flex-1" />
+              <span className="text-xs text-muted-foreground w-14 text-right shrink-0">
+                {totalSlots} hr{totalSlots !== 1 ? "s" : ""}
+              </span>
+              <span className="text-sm font-bold w-20 text-right shrink-0">
+                ₱{totalRev.toLocaleString()}
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ─── Main AdminDashboard ──────────────────────────────────────
 export default function AdminDashboard({
   enrollments,
@@ -985,7 +1311,7 @@ export default function AdminDashboard({
 }) {
   const router = useRouter();
   const [bookings, setBookings] = useState<Booking[]>(initialBookings);
-  const [tab, setTab] = useState<"calendar" | "bookings" | "enrollments" | "contacts">(
+  const [tab, setTab] = useState<"calendar" | "bookings" | "enrollments" | "contacts" | "revenue">(
     "calendar"
   );
   const [loggingOut, setLoggingOut] = useState(false);
@@ -1006,6 +1332,7 @@ export default function AdminDashboard({
     { key: "bookings",    label: `Bookings (${activeBookings.length})` },
     { key: "enrollments", label: `Enrollments (${enrollments.length})` },
     { key: "contacts",    label: `Inquiries (${contacts.length})` },
+    { key: "revenue",     label: "💰 Revenue" },
   ];
 
   return (
@@ -1238,6 +1565,9 @@ export default function AdminDashboard({
             </CardContent>
           </Card>
         )}
+
+        {/* ── Revenue dashboard ─────────────────────────── */}
+        {tab === "revenue" && <SalesDashboard bookings={bookings} />}
 
         {/* ── Contacts table ────────────────────────────── */}
         {tab === "contacts" && (
