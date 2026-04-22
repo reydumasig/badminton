@@ -448,8 +448,15 @@ function BookingCard({
   cancellingId: string | null;
 }) {
   const reschedulable = booking.status === "confirmed" && canReschedule(booking.date, booking.start_time);
-  const cancellable   = booking.status === "confirmed" && canCancel(booking.date, booking.start_time);
-  const isConfirmed   = booking.status === "confirmed";
+  const cancellable   = (booking.status === "confirmed" || booking.status === "tentative") && canCancel(booking.date, booking.start_time);
+  const isActive      = booking.status === "confirmed" || booking.status === "tentative";
+
+  const statusBadge = {
+    confirmed:  "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+    tentative:  "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+    cancelled:  "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+    blocked:    "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+  }[booking.status] ?? "bg-muted text-muted-foreground";
 
   return (
     <Card className={booking.status === "cancelled" ? "opacity-60" : undefined}>
@@ -462,18 +469,23 @@ function BookingCard({
               {formatDate(booking.date)} · {formatTime(booking.start_time)}–{formatEndTime(booking.start_time)}
             </CardDescription>
           </div>
-          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium shrink-0 ${
-            booking.status === "confirmed"
-              ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-              : "bg-muted text-muted-foreground"
-          }`}>
-            {booking.status}
+          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium shrink-0 ${statusBadge}`}>
+            {booking.status === "tentative" ? "⏳ Tentative" : booking.status}
           </span>
         </div>
       </CardHeader>
 
-      {/* Proof of payment section (confirmed bookings only) */}
-      {isConfirmed && <ProofUpload booking={booking} />}
+      {/* Tentative warning banner */}
+      {booking.status === "tentative" && (
+        <CardContent className="pt-0 pb-2">
+          <div className="rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-700 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+            ⚠️ <strong>Payment required within 1 hour</strong> — upload your proof of payment below or this slot will be automatically cancelled.
+          </div>
+        </CardContent>
+      )}
+
+      {/* Proof of payment section (active bookings) */}
+      {isActive && <ProofUpload booking={booking} />}
 
       {/* Reschedule / Cancel actions */}
       {(reschedulable || cancellable) && (
@@ -525,10 +537,10 @@ export default function MemberPortal({
   const [loggingOut,  setLoggingOut]  = useState(false);
 
   const upcoming = bookings.filter(
-    (b) => b.status === "confirmed" && isUpcoming(b.date, b.start_time)
+    (b) => (b.status === "confirmed" || b.status === "tentative") && isUpcoming(b.date, b.start_time)
   );
   const past = bookings.filter(
-    (b) => b.status !== "confirmed" || !isUpcoming(b.date, b.start_time)
+    (b) => !(b.status === "confirmed" || b.status === "tentative") || !isUpcoming(b.date, b.start_time)
   );
 
   const handleLogout = async () => {
