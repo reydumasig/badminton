@@ -1162,11 +1162,15 @@ function SalesDashboard({ bookings }: { bookings: Booking[] }) {
 
   const confirmed = bookings.filter((b) => b.status === "confirmed");
 
+  const isValidISODate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s + "T00:00:00").getTime());
+
   // Resolve current window + comparison window
   const range = (() => {
     if (period === "custom") {
-      const s   = new Date(customFrom + "T00:00:00");
-      const e   = new Date(customTo   + "T00:00:00");
+      const fromSafe = isValidISODate(customFrom) ? customFrom : defaultFrom;
+      const toSafe   = isValidISODate(customTo)   ? customTo   : defaultTo;
+      const s   = new Date(fromSafe + "T00:00:00");
+      const e   = new Date(toSafe   + "T00:00:00");
       const spanMs = e.getTime() - s.getTime() + 86400000;
       const pE  = new Date(s.getTime() - 86400000);
       const pS  = new Date(pE.getTime() - spanMs + 86400000);
@@ -1192,8 +1196,10 @@ function SalesDashboard({ bookings }: { bookings: Booking[] }) {
     revenue: cur.filter((b) => b.court_number === c).reduce((s, b) => s + courtRevenue(b), 0),
   }));
 
+  const safeFrom = isValidISODate(customFrom) ? customFrom : defaultFrom;
+  const safeTo   = isValidISODate(customTo)   ? customTo   : defaultTo;
   const chartData = period === "custom"
-    ? getCustomChartBuckets(cur, customFrom, customTo)
+    ? getCustomChartBuckets(cur, safeFrom, safeTo)
     : getChartBuckets(cur, period);
   const maxVal = Math.max(...chartData.map((d) => d.value), 1);
 
