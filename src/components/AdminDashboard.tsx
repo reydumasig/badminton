@@ -98,6 +98,84 @@ type ModalState =
   | { mode: "create"; date: string; court: number; time: string }
   | { mode: "edit"; booking: Booking };
 
+type BookingGroup = {
+  ids: string[];
+  date: string;
+  courts: number[];
+  start_hour: number;
+  end_hour: number;
+  name: string;
+  email: string;
+  phone: string;
+  status: string;
+  payment_proof_url?: string | null;
+  created_at: string;
+};
+
+type SortBy = "date-asc" | "date-desc" | "recently-booked" | "name";
+
+function formatCourts(courts: number[]): string {
+  const s = [...courts].sort((a, b) => a - b);
+  if (s.length === 1) return `Court ${s[0]}`;
+  if (s.length === 2) return `Courts ${s[0]} & ${s[1]}`;
+  return `Courts ${s.slice(0, -1).join(", ")} & ${s[s.length - 1]}`;
+}
+
+function formatGroupTime(startHour: number, endHour: number): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const start = formatTime(`${pad(startHour)}:00`);
+  const end   = endHour >= 24 ? "12:00 MN" : formatTime(`${pad(endHour)}:00`);
+  const hrs   = endHour - startHour;
+  return `${start} – ${end} · ${hrs} hr${hrs > 1 ? "s" : ""}`;
+}
+
+function groupBookings(bookings: Booking[]): BookingGroup[] {
+  if (bookings.length === 0) return [];
+
+  const sorted = [...bookings].sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    if (a.start_time !== b.start_time) return a.start_time.localeCompare(b.start_time);
+    return a.court_number - b.court_number;
+  });
+
+  const buckets = new Map<string, Booking[]>();
+  for (const b of sorted) {
+    const key = `${b.name}|||${b.date}|||${b.status}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(b);
+  }
+
+  const groups: BookingGroup[] = [];
+  for (const slots of buckets.values()) {
+    const uniqueHours = [...new Set(slots.map(s => parseInt(s.start_time, 10)))].sort((a, b) => a - b);
+    const clusters: number[][] = [];
+    let cur = [uniqueHours[0]];
+    for (let i = 1; i < uniqueHours.length; i++) {
+      uniqueHours[i] === uniqueHours[i - 1] + 1 ? cur.push(uniqueHours[i]) : (clusters.push(cur), cur = [uniqueHours[i]]);
+    }
+    clusters.push(cur);
+
+    for (const cluster of clusters) {
+      const cSlots = slots.filter(s => cluster.includes(parseInt(s.start_time, 10)));
+      const courts = [...new Set(cSlots.map(b => b.court_number))].sort((a, b) => a - b);
+      groups.push({
+        ids:               cSlots.map(b => b.id),
+        date:              cSlots[0].date,
+        courts,
+        start_hour:        cluster[0],
+        end_hour:          cluster[cluster.length - 1] + 1,
+        name:              cSlots[0].name,
+        email:             cSlots[0].email,
+        phone:             cSlots[0].phone,
+        status:            cSlots[0].status,
+        payment_proof_url: cSlots.find(b => b.payment_proof_url)?.payment_proof_url ?? null,
+        created_at:        cSlots[0].created_at,
+      });
+    }
+  }
+  return groups;
+}
+
 const statusColors: Record<string, string> = {
   new: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
   contacted: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
@@ -854,6 +932,7 @@ export default function AdminDashboard({
   );
   const [loggingOut, setLoggingOut] = useState(false);
   const [expandedContact, setExpandedContact] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<SortBy>("date-asc");
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -947,90 +1026,118 @@ export default function AdminDashboard({
         )}
 
         {/* ── Bookings table ────────────────────────────── */}
-        {tab === "bookings" && (
-          <Card>
-            <CardContent className="p-0">
-              {activeBookings.length === 0 ? (
-                <p className="p-6 text-sm text-muted-foreground">No bookings yet.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        {["Date","Time","Court","Name","Email","Phone","Proof","Status"].map((h) => (
-                          <th key={h} className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeBookings.map((b, i) => (
-                        <tr
-                          key={b.id}
-                          className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}
-                        >
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            {new Date(b.date + "T00:00:00").toLocaleDateString("en-PH", {
-                              month: "short", day: "numeric", year: "numeric",
-                            })}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            {formatTime(b.start_time)} – {formatEndTime(b.start_time)}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <span
-                              className="inline-flex items-center gap-1.5 font-medium text-xs"
-                            >
-                              <span
-                                className="w-2 h-2 rounded-full inline-block"
-                                style={{ backgroundColor: COURT_COLORS[b.court_number - 1] ?? "#888" }}
-                              />
-                              Court {b.court_number}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 font-medium">{b.name}</td>
-                          <td className="px-4 py-3">
-                            <a
-                              href={`mailto:${b.email}`}
-                              className="text-primary underline-offset-2 hover:underline"
-                            >
-                              {b.email}
-                            </a>
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground">{b.phone}</td>
-                          <td className="px-4 py-3">
-                            {b.payment_proof_url ? (
-                              <a
-                                href={b.payment_proof_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline underline-offset-2 font-medium"
-                              >
-                                <span className="text-green-600">✓</span> View ↗
-                              </a>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                                statusColors[b.status] ?? ""
-                              }`}
-                            >
-                              {b.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+        {tab === "bookings" && (() => {
+          const groups = groupBookings(activeBookings);
+          const sorted = [...groups].sort((a, b) => {
+            switch (sortBy) {
+              case "date-asc":        return a.date !== b.date ? a.date.localeCompare(b.date) : a.start_hour - b.start_hour;
+              case "date-desc":       return a.date !== b.date ? b.date.localeCompare(a.date) : a.start_hour - b.start_hour;
+              case "recently-booked": return b.created_at.localeCompare(a.created_at);
+              case "name":            return a.name.localeCompare(b.name);
+              default:                return 0;
+            }
+          });
+
+          return (
+            <Card>
+              {/* Sort controls */}
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <p className="text-sm text-muted-foreground">
+                  {sorted.length} booking{sorted.length !== 1 ? "s" : ""}
+                </p>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-muted-foreground whitespace-nowrap">Sort by</label>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortBy)}
+                    className="rounded-md border border-input bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="date-asc">Date (soonest first)</option>
+                    <option value="date-desc">Date (latest first)</option>
+                    <option value="recently-booked">Recently Booked</option>
+                    <option value="name">Name (A–Z)</option>
+                  </select>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+              </div>
+
+              <CardContent className="p-0">
+                {sorted.length === 0 ? (
+                  <p className="p-6 text-sm text-muted-foreground">No bookings yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          {["Date", "Time", "Courts", "Name", "Email", "Phone", "Proof", "Status"].map((h) => (
+                            <th key={h} className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sorted.map((g, i) => (
+                          <tr
+                            key={g.ids.join("-")}
+                            className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}
+                          >
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              {new Date(g.date + "T00:00:00").toLocaleDateString("en-PH", {
+                                month: "short", day: "numeric", year: "numeric",
+                              })}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-xs">
+                              {formatGroupTime(g.start_hour, g.end_hour)}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1.5 font-medium text-xs">
+                                {g.courts.map((c) => (
+                                  <span key={c} className="flex items-center gap-1">
+                                    <span
+                                      className="w-2 h-2 rounded-full inline-block"
+                                      style={{ backgroundColor: COURT_COLORS[c - 1] ?? "#888" }}
+                                    />
+                                  </span>
+                                ))}
+                                {formatCourts(g.courts)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-medium">{g.name}</td>
+                            <td className="px-4 py-3">
+                              <a href={`mailto:${g.email}`} className="text-primary underline-offset-2 hover:underline">
+                                {g.email}
+                              </a>
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground">{g.phone}</td>
+                            <td className="px-4 py-3">
+                              {g.payment_proof_url ? (
+                                <a
+                                  href={g.payment_proof_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline underline-offset-2 font-medium"
+                                >
+                                  <span className="text-green-600">✓</span> View ↗
+                                </a>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[g.status] ?? ""}`}>
+                                {g.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* ── Enrollments table ─────────────────────────── */}
         {tab === "enrollments" && (

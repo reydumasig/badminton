@@ -58,6 +58,16 @@ function canCancel(date: string, time: string) {
 function canReschedule(date: string, time: string) {
   return (new Date(`${date}T${time}`).getTime() - Date.now()) / 3_600_000 > 24;
 }
+// Group-level helpers
+function groupIsUpcoming(g: { date: string; start_hour: number }) {
+  return isUpcoming(g.date, `${g.start_hour.toString().padStart(2, "0")}:00`);
+}
+function groupCanCancel(g: { date: string; start_hour: number }) {
+  return canCancel(g.date, `${g.start_hour.toString().padStart(2, "0")}:00:00`);
+}
+function groupCanReschedule(g: { date: string; start_hour: number }) {
+  return canReschedule(g.date, `${g.start_hour.toString().padStart(2, "0")}:00:00`);
+}
 
 // ─── Types ────────────────────────────────────────────────────
 type Booking = {
@@ -71,6 +81,85 @@ type Booking = {
 };
 
 type BookedSlot = { court: number; time: string };
+
+// A group of consecutive slots (same user, same date, adjacent or simultaneous courts/hours)
+type BookingGroup = {
+  ids: string[];
+  date: string;
+  courts: number[];
+  start_hour: number;
+  end_hour: number;
+  name: string;
+  status: string;
+  payment_proof_url?: string | null;
+  firstBooking: Booking; // used for reschedule modal (single-slot groups only)
+};
+
+// ─── Group helpers ────────────────────────────────────────────
+function formatCourts(courts: number[]): string {
+  const s = [...courts].sort((a, b) => a - b);
+  if (s.length === 1) return `Court ${s[0]}`;
+  if (s.length === 2) return `Courts ${s[0]} & ${s[1]}`;
+  return `Courts ${s.slice(0, -1).join(", ")} & ${s[s.length - 1]}`;
+}
+
+function formatGroupTime(startHour: number, endHour: number): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const start = formatTime(`${pad(startHour)}:00`);
+  const end   = endHour >= 24 ? "12:00 MN" : formatTime(`${pad(endHour)}:00`);
+  const hrs   = endHour - startHour;
+  return `${start} – ${end} · ${hrs} hr${hrs > 1 ? "s" : ""}`;
+}
+
+function groupBookings(bookings: Booking[]): BookingGroup[] {
+  if (bookings.length === 0) return [];
+
+  const sorted = [...bookings].sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    if (a.start_time !== b.start_time) return a.start_time.localeCompare(b.start_time);
+    return a.court_number - b.court_number;
+  });
+
+  // Bucket by (name, date, status) — then cluster into consecutive-hour groups
+  const buckets = new Map<string, Booking[]>();
+  for (const b of sorted) {
+    const key = `${b.name}|||${b.date}|||${b.status}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(b);
+  }
+
+  const groups: BookingGroup[] = [];
+
+  for (const slots of buckets.values()) {
+    const uniqueHours = [...new Set(slots.map(s => parseInt(s.start_time, 10)))].sort((a, b) => a - b);
+
+    // Split into consecutive hour clusters
+    const clusters: number[][] = [];
+    let cur = [uniqueHours[0]];
+    for (let i = 1; i < uniqueHours.length; i++) {
+      uniqueHours[i] === uniqueHours[i - 1] + 1 ? cur.push(uniqueHours[i]) : (clusters.push(cur), cur = [uniqueHours[i]]);
+    }
+    clusters.push(cur);
+
+    for (const cluster of clusters) {
+      const cSlots = slots.filter(s => cluster.includes(parseInt(s.start_time, 10)));
+      const courts = [...new Set(cSlots.map(b => b.court_number))].sort((a, b) => a - b);
+      groups.push({
+        ids:              cSlots.map(b => b.id),
+        date:             cSlots[0].date,
+        courts,
+        start_hour:       cluster[0],
+        end_hour:         cluster[cluster.length - 1] + 1,
+        name:             cSlots[0].name,
+        status:           cSlots[0].status,
+        payment_proof_url: cSlots.find(b => b.payment_proof_url)?.payment_proof_url ?? null,
+        firstBooking:     cSlots[0],
+      });
+    }
+  }
+
+  return groups.sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.start_hour - b.start_hour);
+}
 
 // ─── Reschedule Modal ─────────────────────────────────────────
 function RescheduleModal({
@@ -262,8 +351,8 @@ function RescheduleModal({
 }
 
 // ─── Proof Upload Section ─────────────────────────────────────
-function ProofUpload({ booking }: { booking: Booking }) {
-  const [proofUrl,     setProofUrl]     = useState<string | null>(booking.payment_proof_url ?? null);
+function ProofUpload({ bookingIds, initialProofUrl }: { bookingIds: string[]; initialProofUrl?: string | null }) {
+  const [proofUrl,     setProofUrl]     = useState<string | null>(initialProofUrl ?? null);
   const [uploading,    setUploading]    = useState(false);
   const [deleting,     setDeleting]     = useState(false);
   const [successFlash, setSuccessFlash] = useState(false);
@@ -292,16 +381,23 @@ function ProofUpload({ booking }: { booking: Booking }) {
     setUploading(true);
     setError("");
 
-    const formData = new FormData();
-    formData.append("file",      file);
-    formData.append("bookingId", booking.id);
-
     try {
-      const res  = await fetch("/api/bookings/proof", { method: "POST", body: formData });
+      // Upload to first booking ID to get the URL
+      const fd = new FormData();
+      fd.append("file",      file);
+      fd.append("bookingId", bookingIds[0]);
+      const res  = await fetch("/api/bookings/proof", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok) { setError(json.error || "Upload failed."); return; }
       setProofUrl(json.url);
       triggerSuccessFlash();
+      // Upload same file to remaining IDs (prevents auto-cancel on all slots)
+      for (const id of bookingIds.slice(1)) {
+        const fd2 = new FormData();
+        fd2.append("file",      file);
+        fd2.append("bookingId", id);
+        await fetch("/api/bookings/proof", { method: "POST", body: fd2 });
+      }
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -313,13 +409,14 @@ function ProofUpload({ booking }: { booking: Booking }) {
     setDeleting(true);
     setError("");
     try {
-      const res = await fetch("/api/bookings/proof", {
-        method:  "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ bookingId: booking.id }),
-      });
-      const json = await res.json();
-      if (!res.ok) { setError(json.error || "Delete failed."); return; }
+      // Remove proof from all booking IDs in the group
+      for (const id of bookingIds) {
+        await fetch("/api/bookings/proof", {
+          method:  "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ bookingId: id }),
+        });
+      }
       setProofUrl(null);
     } catch {
       setError("Network error. Please try again.");
@@ -435,48 +532,52 @@ function ProofUpload({ booking }: { booking: Booking }) {
   );
 }
 
-// ─── Booking Card ─────────────────────────────────────────────
+// ─── Booking Group Card ───────────────────────────────────────
 function BookingCard({
-  booking,
+  group,
   onCancel,
   onReschedule,
-  cancellingId,
+  cancellingIds,
 }: {
-  booking: Booking;
-  onCancel: (id: string) => void;
+  group: BookingGroup;
+  onCancel: (ids: string[]) => void;
   onReschedule: (b: Booking) => void;
-  cancellingId: string | null;
+  cancellingIds: string[];
 }) {
-  const reschedulable = booking.status === "confirmed" && canReschedule(booking.date, booking.start_time);
-  const cancellable   = (booking.status === "confirmed" || booking.status === "tentative") && canCancel(booking.date, booking.start_time);
-  const isActive      = booking.status === "confirmed" || booking.status === "tentative";
+  // Reschedule only available for single-slot groups (1 court, 1 hour)
+  const isSingleSlot  = group.ids.length === 1;
+  const startTime     = `${group.start_hour.toString().padStart(2, "0")}:00`;
+  const reschedulable = isSingleSlot && group.status === "confirmed" && groupCanReschedule(group);
+  const cancellable   = (group.status === "confirmed" || group.status === "tentative") && groupCanCancel(group);
+  const isActive      = group.status === "confirmed" || group.status === "tentative";
+  const isCancelling  = group.ids.some(id => cancellingIds.includes(id));
 
   const statusBadge = {
-    confirmed:  "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-    tentative:  "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-    cancelled:  "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-    blocked:    "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
-  }[booking.status] ?? "bg-muted text-muted-foreground";
+    confirmed: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+    tentative: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+    cancelled: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+    blocked:   "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+  }[group.status] ?? "bg-muted text-muted-foreground";
 
   return (
-    <Card className={booking.status === "cancelled" ? "opacity-60" : undefined}>
+    <Card className={group.status === "cancelled" ? "opacity-60" : undefined}>
       {/* Header */}
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <CardTitle className="text-base">Court {booking.court_number}</CardTitle>
+            <CardTitle className="text-base">{formatCourts(group.courts)}</CardTitle>
             <CardDescription>
-              {formatDate(booking.date)} · {formatTime(booking.start_time)}–{formatEndTime(booking.start_time)}
+              {formatDate(group.date)} · {formatGroupTime(group.start_hour, group.end_hour)}
             </CardDescription>
           </div>
           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium shrink-0 ${statusBadge}`}>
-            {booking.status === "tentative" ? "⏳ Tentative" : booking.status}
+            {group.status === "tentative" ? "⏳ Tentative" : group.status}
           </span>
         </div>
       </CardHeader>
 
       {/* Tentative warning banner */}
-      {booking.status === "tentative" && (
+      {group.status === "tentative" && (
         <CardContent className="pt-0 pb-2">
           <div className="rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-700 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
             ⚠️ <strong>Payment required within 1 hour</strong> — upload your proof of payment below or this slot will be automatically cancelled.
@@ -485,13 +586,18 @@ function BookingCard({
       )}
 
       {/* Proof of payment section (active bookings) */}
-      {isActive && <ProofUpload booking={booking} />}
+      {isActive && (
+        <ProofUpload
+          bookingIds={group.ids}
+          initialProofUrl={group.payment_proof_url}
+        />
+      )}
 
       {/* Reschedule / Cancel actions */}
       {(reschedulable || cancellable) && (
         <CardContent className="pt-0 flex flex-wrap gap-2 pb-4">
           {reschedulable && (
-            <Button variant="outline" size="sm" onClick={() => onReschedule(booking)}>
+            <Button variant="outline" size="sm" onClick={() => onReschedule(group.firstBooking)}>
               Reschedule
             </Button>
           )}
@@ -500,17 +606,17 @@ function BookingCard({
               variant="outline"
               size="sm"
               className="text-destructive border-destructive/30 hover:bg-destructive/10"
-              disabled={cancellingId === booking.id}
-              onClick={() => onCancel(booking.id)}
+              disabled={isCancelling}
+              onClick={() => onCancel(group.ids)}
             >
-              {cancellingId === booking.id ? "Cancelling…" : "Cancel"}
+              {isCancelling ? "Cancelling…" : "Cancel"}
             </Button>
           )}
         </CardContent>
       )}
 
       {/* Hint when within 24h but still cancellable */}
-      {!reschedulable && cancellable && (
+      {isSingleSlot && !reschedulable && cancellable && (
         <CardContent className="pt-0 pb-3">
           <p className="text-xs text-muted-foreground">
             Rescheduling unavailable — less than 24 h away.
@@ -531,7 +637,7 @@ export default function MemberPortal({
 }) {
   const router  = useRouter();
   const [bookings,    setBookings]    = useState(initialBookings);
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancellingIds, setCancellingIds] = useState<string[]>([]);
   const [reschedulingBooking, setReschedulingBooking] = useState<Booking | null>(null);
   const [tab,         setTab]         = useState<"upcoming" | "past">("upcoming");
   const [loggingOut,  setLoggingOut]  = useState(false);
@@ -543,6 +649,9 @@ export default function MemberPortal({
     (b) => !(b.status === "confirmed" || b.status === "tentative") || !isUpcoming(b.date, b.start_time)
   );
 
+  const upcomingGroups = groupBookings(upcoming);
+  const pastGroups     = groupBookings(past);
+
   const handleLogout = async () => {
     setLoggingOut(true);
     const supabase = createAuthBrowserClient();
@@ -551,18 +660,21 @@ export default function MemberPortal({
     router.refresh();
   };
 
-  const handleCancel = async (bookingId: string) => {
-    if (!confirm("Are you sure you want to cancel this booking?")) return;
-    setCancellingId(bookingId);
-    const res = await fetch("/api/bookings/cancel", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ bookingId }),
-    });
-    if (res.ok) {
-      setBookings((prev) => prev.map((b) => b.id === bookingId ? { ...b, status: "cancelled" } : b));
-    }
-    setCancellingId(null);
+  const handleCancel = async (ids: string[]) => {
+    const label = ids.length > 1 ? `all ${ids.length} slots in this booking` : "this booking";
+    if (!confirm(`Are you sure you want to cancel ${label}?`)) return;
+    setCancellingIds(ids);
+    await Promise.all(
+      ids.map((id) =>
+        fetch("/api/bookings/cancel", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ bookingId: id }),
+        })
+      )
+    );
+    setBookings((prev) => prev.map((b) => ids.includes(b.id) ? { ...b, status: "cancelled" } : b));
+    setCancellingIds([]);
   };
 
   const handleRescheduled = (updated: Booking) => {
@@ -570,7 +682,7 @@ export default function MemberPortal({
     setReschedulingBooking(null);
   };
 
-  const displayedBookings = tab === "upcoming" ? upcoming : past;
+  const displayedGroups = tab === "upcoming" ? upcomingGroups : pastGroups;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -598,9 +710,9 @@ export default function MemberPortal({
 
         {/* Stats */}
         <div className="grid gap-4 sm:grid-cols-3">
-          <Card><CardHeader className="pb-2"><CardDescription>Upcoming</CardDescription><CardTitle className="text-3xl">{upcoming.length}</CardTitle></CardHeader></Card>
+          <Card><CardHeader className="pb-2"><CardDescription>Upcoming</CardDescription><CardTitle className="text-3xl">{upcomingGroups.length}</CardTitle></CardHeader></Card>
           <Card><CardHeader className="pb-2"><CardDescription>Total Bookings</CardDescription><CardTitle className="text-3xl">{bookings.filter((b) => b.status === "confirmed").length}</CardTitle></CardHeader></Card>
-          <Card><CardHeader className="pb-2"><CardDescription>Past Sessions</CardDescription><CardTitle className="text-3xl">{past.length}</CardTitle></CardHeader></Card>
+          <Card><CardHeader className="pb-2"><CardDescription>Past Sessions</CardDescription><CardTitle className="text-3xl">{pastGroups.length}</CardTitle></CardHeader></Card>
         </div>
 
         {/* Tabs */}
@@ -610,13 +722,13 @@ export default function MemberPortal({
               className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors capitalize ${
                 tab === t ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
               }`}>
-              {t === "upcoming" ? `Upcoming (${upcoming.length})` : `Past (${past.length})`}
+              {t === "upcoming" ? `Upcoming (${upcomingGroups.length})` : `Past (${pastGroups.length})`}
             </button>
           ))}
         </div>
 
-        {/* Booking cards */}
-        {displayedBookings.length === 0 ? (
+        {/* Booking group cards */}
+        {displayedGroups.length === 0 ? (
           <Card className="border-dashed">
             <CardHeader className="text-center">
               <CardTitle className="text-base text-muted-foreground">
@@ -631,13 +743,13 @@ export default function MemberPortal({
           </Card>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {displayedBookings.map((b) => (
+            {displayedGroups.map((g) => (
               <BookingCard
-                key={b.id}
-                booking={b}
+                key={g.ids.join("-")}
+                group={g}
                 onCancel={handleCancel}
                 onReschedule={setReschedulingBooking}
-                cancellingId={cancellingId}
+                cancellingIds={cancellingIds}
               />
             ))}
           </div>
