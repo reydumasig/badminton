@@ -47,6 +47,13 @@ function formatEndTime(startTime: string) {
   return formatTime(`${(h + 1).toString().padStart(2, "0")}:00`);
 }
 
+function formatSpanEndTime(startTime: string, span: number): string {
+  const [h] = startTime.split(":").map(Number);
+  const endH = h + span;
+  if (endH >= 24) return "12:00 MN";
+  return formatTime(`${endH.toString().padStart(2, "0")}:00`);
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-PH", {
     year: "numeric",
@@ -127,6 +134,37 @@ function formatGroupTime(startHour: number, endHour: number): string {
   const end   = endHour >= 24 ? "12:00 MN" : formatTime(`${pad(endHour)}:00`);
   const hrs   = endHour - startHour;
   return `${start} – ${end} · ${hrs} hr${hrs > 1 ? "s" : ""}`;
+}
+
+// ─── Calendar coverage map ────────────────────────────────────
+type CalendarEntry = { booking: Booking; span: number } | "skip";
+
+function buildCalendarCoverage(dayBookings: Booking[]): Map<string, CalendarEntry> {
+  const map = new Map<string, CalendarEntry>();
+  for (const court of COURTS) {
+    const slots = dayBookings
+      .filter((b) => b.court_number === court)
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
+    let i = 0;
+    while (i < slots.length) {
+      const first = slots[i];
+      const startH = parseInt(first.start_time, 10);
+      let span = 1;
+      while (
+        i + span < slots.length &&
+        slots[i + span].name === first.name &&
+        parseInt(slots[i + span].start_time, 10) === startH + span
+      ) span++;
+      const key = `${court}:${first.start_time.substring(0, 5)}`;
+      map.set(key, { booking: first, span });
+      for (let s = 1; s < span; s++) {
+        const skipKey = `${court}:${(startH + s).toString().padStart(2, "0")}:00`;
+        map.set(skipKey, "skip");
+      }
+      i += span;
+    }
+  }
+  return map;
 }
 
 function groupBookings(bookings: Booking[]): BookingGroup[] {
@@ -694,6 +732,8 @@ function AdminCalendar({
     { weekday: "long", year: "numeric", month: "long", day: "numeric" }
   );
 
+  const calendarCoverage = buildCalendarCoverage(dayBookings);
+
   return (
     <>
       <div className="grid gap-6 lg:grid-cols-[320px_1fr] items-start">
@@ -853,32 +893,50 @@ function AdminCalendar({
                       </td>
 
                       {COURTS.map((court) => {
-                        const booking = getSlotBooking(court, time);
-                        const isAdminBooking = booking?.name.startsWith("Admin");
+                        const coverageKey = `${court}:${time}`;
+                        const entry = calendarCoverage.get(coverageKey);
 
-                        if (booking) {
+                        // This slot is part of a span started in a previous row — skip td
+                        if (entry === "skip") return null;
+
+                        // This slot starts a grouped (or single) booking
+                        if (entry && typeof entry === "object") {
+                          const { booking, span } = entry;
+                          const isAdminBooking = booking.name.startsWith("Admin");
                           return (
-                            <td key={court} className="py-1.5 px-2">
+                            <td
+                              key={court}
+                              rowSpan={span}
+                              className="px-2 align-top"
+                              style={{ paddingTop: "6px", paddingBottom: "6px" }}
+                            >
                               <button
                                 onClick={() => handleCellClick(court, time)}
-                                className={`w-full rounded-md py-2 px-2.5 text-left transition-all hover:opacity-70 border ${
+                                className={`w-full h-full rounded-md py-2 px-2.5 text-left transition-all hover:opacity-70 border ${
                                   isAdminBooking
                                     ? "bg-orange-100 text-orange-900 border-orange-200 dark:bg-orange-950/60 dark:text-orange-200 dark:border-orange-800"
                                     : "bg-blue-100 text-blue-900 border-blue-200 dark:bg-blue-950/60 dark:text-blue-100 dark:border-blue-800"
                                 }`}
                                 title={`${booking.name}\n${booking.email}\n${booking.phone}`}
+                                style={{ minHeight: `${span * 40 - 8}px` }}
                               >
                                 <p className="text-xs font-semibold truncate leading-tight max-w-[100px]">
                                   {booking.name}
                                 </p>
                                 <p className="text-[10px] opacity-60 mt-0.5">
-                                  {formatTime(time)}–{formatEndTime(time)}
+                                  {formatTime(time)}–{formatSpanEndTime(time, span)}
                                 </p>
+                                {span > 1 && (
+                                  <p className="text-[10px] opacity-50 mt-0.5">
+                                    {span} hr{span > 1 ? "s" : ""}
+                                  </p>
+                                )}
                               </button>
                             </td>
                           );
                         }
 
+                        // Empty slot
                         return (
                           <td key={court} className="py-1.5 px-2">
                             <button
