@@ -14,6 +14,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Database not configured." }, { status: 503 });
   }
 
+  // Auto-cancel expired tentative bookings (older than 1 hr, no proof uploaded).
+  // This runs on every availability check so no cron job is needed.
+  const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { data: expired } = await supabase
+    .from("bookings")
+    .select("id")
+    .eq("status", "tentative")
+    .is("payment_proof_url", null)
+    .lt("created_at", cutoff);
+
+  if (expired && expired.length > 0) {
+    const ids = expired.map((b) => b.id);
+    await supabase.from("bookings").update({ status: "cancelled" }).in("id", ids);
+    console.log(`[AUTO-CANCEL] Cancelled ${ids.length} expired tentative booking(s) on availability check`);
+  }
+
+  // Fetch booked slots — both confirmed AND tentative block a court
   const { data, error } = await supabase
     .from("bookings")
     .select("court_number, start_time")
@@ -24,10 +41,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Failed to fetch availability." }, { status: 500 });
   }
 
-  // Return booked slots as array of "COURT:TIME" strings for easy lookup
   const booked = (data ?? []).map((b) => ({
     court: b.court_number,
-    time: b.start_time.substring(0, 5), // "08:00"
+    time: b.start_time.substring(0, 5),
   }));
 
   return NextResponse.json({ booked });
