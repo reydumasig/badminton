@@ -14,13 +14,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Database not configured." }, { status: 503 });
   }
 
-  // Auto-cancel expired tentative bookings (older than 1 hr, no proof uploaded).
-  // This runs on every availability check so no cron job is needed.
+  // Belt-and-suspenders cleanup: cancel expired tentative bookings inline.
+  // Admin-created bookings (email = 'admin@internal') are exempt — admins can
+  // hold slots tentatively without a payment deadline.
   const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const { data: expired } = await supabase
     .from("bookings")
     .select("id")
     .eq("status", "tentative")
+    .neq("email", "admin@internal")
     .is("payment_proof_url", null)
     .lt("created_at", cutoff);
 

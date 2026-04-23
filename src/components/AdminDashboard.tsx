@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -660,6 +660,30 @@ function AdminCalendar({
   const [viewMonth, setViewMonth] = useState(now.getMonth());
   const [selectedDate, setSelectedDate] = useState<string>(today);
   const [modal, setModal] = useState<ModalState | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // ── Live data refresh ────────────────────────────────────
+  const refreshBookings = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const res  = await fetch("/api/admin/bookings");
+      const json = await res.json();
+      if (res.ok) setBookings(json.bookings ?? []);
+    } catch { /* silently ignore network errors */ } finally {
+      setRefreshing(false);
+    }
+  }, [setBookings]);
+
+  // Refresh whenever the admin navigates to a different month
+  useEffect(() => {
+    refreshBookings();
+  }, [viewMonth, viewYear]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh every 30 seconds so stale user bookings appear
+  useEffect(() => {
+    const id = setInterval(refreshBookings, 30_000);
+    return () => clearInterval(id);
+  }, [refreshBookings]);
 
   // ── Calendar grid maths ──────────────────────────────────
   const firstDayOfMonth = new Date(viewYear, viewMonth, 1).getDay();
@@ -836,15 +860,41 @@ function AdminCalendar({
                     : "No bookings · click any slot to add one"}
                 </CardDescription>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  setModal({ mode: "create", date: selectedDate, court: 1, time: "08:00" })
-                }
-              >
-                + Add Booking
-              </Button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={refreshBookings}
+                  disabled={refreshing}
+                  title="Refresh bookings"
+                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-40"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={refreshing ? "animate-spin" : ""}
+                  >
+                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                    <path d="M21 3v5h-5"/>
+                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                    <path d="M3 21v-5h5"/>
+                  </svg>
+                </button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setModal({ mode: "create", date: selectedDate, court: 1, time: "08:00" })
+                  }
+                >
+                  + Add Booking
+                </Button>
+              </div>
             </div>
           </CardHeader>
 

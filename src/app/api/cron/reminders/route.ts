@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
               <tr><td style="padding:8px 0;color:#555;"><strong>Time</strong></td><td>${formatTime(b.start_time)} – ${endTime === "12:00 MN" ? endTime : formatTime(endTime)}</td></tr>
               <tr><td style="padding:8px 0;color:#555;"><strong>Court</strong></td><td>Court ${b.court_number}</td></tr>
             </table>
-            <p style="color:#555;">Please bring proper non-marking indoor badminton shoes. Payment is due at the venue.</p>
+            <p style="color:#555;">Please bring proper non-marking indoor badminton shoes. See you on the court!</p>
             <hr style="margin:24px 0;border:none;border-top:1px solid #eee;"/>
             <p style="font-size:12px;color:#999;">Badminton District · Block 1 Lot 2 Loresville Drive, Lores Farm Subdivision, Barangay San Roque, Antipolo</p>
             <p style="font-size:12px;color:#999;">📱 +63 9272222657</p>

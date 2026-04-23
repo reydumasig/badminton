@@ -118,10 +118,13 @@ export async function GET(req: NextRequest) {
   // Atomic update: only rows still "tentative" are touched.
   // The .select() returns exactly what was cancelled — prevents double-processing
   // if this cron overlaps with the availability-check cleanup.
+  // Admin-created bookings (email = 'admin@internal') are intentionally excluded
+  // so admins can hold slots in tentative status without a payment deadline.
   const { data: cancelled, error } = await supabase
     .from("bookings")
     .update({ status: "cancelled" })
     .eq("status", "tentative")
+    .neq("email", "admin@internal")
     .is("payment_proof_url", null)
     .lt("created_at", cutoff)
     .select("id, name, email, date, start_time, court_number");

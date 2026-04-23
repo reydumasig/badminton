@@ -144,7 +144,7 @@ export async function PUT(req: NextRequest) {
         .select("id, start_time")
         .eq("date", checkDate)
         .eq("court_number", checkCourt)
-        .eq("status", "confirmed")
+        .in("status", ["confirmed", "tentative"])
         .neq("id", id);
 
       const hasConflict = (conflicts ?? []).some(
