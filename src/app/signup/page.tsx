@@ -1,17 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { createAuthBrowserClient } from "@/lib/supabase-auth-browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 
 export default function SignupPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
+  const [needsConfirm, setNeedsConfirm] = useState(false);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,7 +21,7 @@ export default function SignupPage() {
     setError("");
 
     const supabase = createAuthBrowserClient();
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -33,10 +35,18 @@ export default function SignupPage() {
       return;
     }
 
-    setDone(true);
+    // Email confirmation disabled in Supabase → session returned immediately
+    if (data.session) {
+      router.push("/dashboard");
+      router.refresh();
+      return;
+    }
+
+    // Email confirmation still enabled → ask them to check their inbox
+    setNeedsConfirm(true);
   };
 
-  if (done) {
+  if (needsConfirm) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="w-full max-w-sm text-center space-y-3">
