@@ -39,7 +39,7 @@ export default async function AdminPage() {
         .select("*")
         .order("date", { ascending: false })
         .order("start_time", { ascending: false })
-        .limit(5000),
+        .limit(10000),
     ]);
 
   return (

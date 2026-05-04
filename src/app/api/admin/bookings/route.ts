@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     .select("*")
     .order("date", { ascending: false })
     .order("start_time", { ascending: false })
-    .limit(5000);
+    .limit(10000);
 
   if (date) query = query.eq("date", date);
 
