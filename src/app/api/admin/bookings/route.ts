@@ -22,11 +22,13 @@ export async function GET(req: NextRequest) {
   if (!supabase)
     return NextResponse.json({ error: "Database not configured." }, { status: 503 });
 
+  // Order DESC so upcoming/future bookings are fetched first — if limit is
+  // ever hit, it's better to lose distant-past history than upcoming slots.
   let query = supabase
     .from("bookings")
     .select("*")
-    .order("date", { ascending: true })
-    .order("start_time", { ascending: true })
+    .order("date", { ascending: false })
+    .order("start_time", { ascending: false })
     .limit(5000);
 
   if (date) query = query.eq("date", date);
