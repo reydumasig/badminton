@@ -719,20 +719,29 @@ function AdminCalendar({
   };
 
   // ── Day schedule helpers ─────────────────────────────────
+  // Active (non-cancelled) bookings for the selected day — used for coverage map + rowspan
   const dayBookings = bookings.filter(
     (b) => b.date === selectedDate && b.status !== "cancelled"
   );
+  // Cancelled bookings shown as a separate indicator so admin can see what happened
+  const dayCancelledBookings = bookings.filter(
+    (b) => b.date === selectedDate && b.status === "cancelled"
+  );
 
+  // Fast lookup maps
   const getSlotBooking = (court: number, time: string) =>
     dayBookings.find(
-      (b) =>
-        b.court_number === court &&
-        b.start_time.substring(0, 5) === time
+      (b) => b.court_number === court && b.start_time.substring(0, 5) === time
+    );
+  const getCancelledSlotBooking = (court: number, time: string) =>
+    dayCancelledBookings.find(
+      (b) => b.court_number === court && b.start_time.substring(0, 5) === time
     );
 
   // ── Modal handlers ───────────────────────────────────────
   const handleCellClick = (court: number, time: string) => {
-    const existing = getSlotBooking(court, time);
+    // Let admin click into cancelled slots to restore/edit them
+    const existing = getSlotBooking(court, time) ?? getCancelledSlotBooking(court, time);
     setModal(
       existing
         ? { mode: "edit", booking: existing }
@@ -981,6 +990,27 @@ function AdminCalendar({
                                     {span} hr{span > 1 ? "s" : ""}
                                   </p>
                                 )}
+                              </button>
+                            </td>
+                          );
+                        }
+
+                        // Cancelled slot — show a visible indicator so admin can see what happened
+                        const cancelledBooking = getCancelledSlotBooking(court, time);
+                        if (cancelledBooking) {
+                          return (
+                            <td key={court} className="py-1.5 px-2">
+                              <button
+                                onClick={() => handleCellClick(court, time)}
+                                className="w-full rounded-md py-2 px-2.5 text-left transition-all hover:opacity-80 border border-red-200/60 bg-red-50/40 dark:bg-red-950/20 dark:border-red-900/40"
+                                title={`Cancelled: ${cancelledBooking.name}\n${cancelledBooking.email}`}
+                              >
+                                <p className="text-[10px] font-medium line-through text-red-400 dark:text-red-600 truncate leading-tight max-w-[100px]">
+                                  {cancelledBooking.name}
+                                </p>
+                                <p className="text-[9px] text-red-400/70 dark:text-red-600/70 mt-0.5">
+                                  Cancelled
+                                </p>
                               </button>
                             </td>
                           );

@@ -26,7 +26,8 @@ export async function GET(req: NextRequest) {
     .from("bookings")
     .select("*")
     .order("date", { ascending: true })
-    .order("start_time", { ascending: true });
+    .order("start_time", { ascending: true })
+    .limit(5000);
 
   if (date) query = query.eq("date", date);
 

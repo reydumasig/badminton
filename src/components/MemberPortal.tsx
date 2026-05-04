@@ -169,7 +169,7 @@ function RescheduleModal({
 }: {
   booking: Booking;
   onClose: () => void;
-  onRescheduled: (updated: Booking) => void;
+  onRescheduled: (newBooking: Booking, oldBookingId: string) => void;
 }) {
   const [newDate,      setNewDate]      = useState(booking.date);
   const [newCourt,     setNewCourt]     = useState<number | null>(null);
@@ -222,8 +222,8 @@ function RescheduleModal({
         body:    JSON.stringify({ bookingId: booking.id, newDate, newCourtNumber: newCourt, newStartTime: newTime }),
       });
       const json = await res.json();
-      if (!res.ok) { setError(json.error || "Reschedule failed."); setSubmitting(false); return; }
-      onRescheduled({ ...booking, date: newDate, court_number: newCourt, start_time: newTime });
+      if (!res.ok) { setError(json.error || "Rebook failed."); setSubmitting(false); return; }
+      onRescheduled(json.newBooking, booking.id);
     } catch {
       setError("Network error. Please try again.");
       setSubmitting(false);
@@ -237,9 +237,9 @@ function RescheduleModal({
     >
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border bg-background shadow-2xl">
         <div className="px-6 pt-6 pb-4 border-b">
-          <h2 className="text-lg font-semibold">Reschedule Booking</h2>
+          <h2 className="text-lg font-semibold">Rebook Slot</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Currently:{" "}
+            Moving from:{" "}
             <span className="font-medium text-foreground">
               Court {booking.court_number} · {formatDate(booking.date)} ·{" "}
               {formatTime(booking.start_time)}–{formatEndTime(booking.start_time)}
@@ -317,7 +317,7 @@ function RescheduleModal({
 
           {newTime && newCourt && !isSameAsOriginal && (
             <div className="rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 p-4 space-y-1.5">
-              <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">Reschedule Summary</p>
+              <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">Rebook Summary</p>
               {[
                 ["From", `Court ${booking.court_number} · ${formatDate(booking.date)} · ${formatTime(booking.start_time)}–${formatEndTime(booking.start_time)}`],
                 ["To",   `Court ${newCourt} · ${formatDate(newDate)} · ${formatTime(newTime)}–${formatEndTime(newTime)}`],
@@ -327,6 +327,9 @@ function RescheduleModal({
                   <span>{val}</span>
                 </div>
               ))}
+              <p className="text-xs text-blue-700 dark:text-blue-300 pt-1 border-t border-blue-200 dark:border-blue-700">
+                ✅ Your payment will be transferred to the new slot. No additional payment required.
+              </p>
             </div>
           )}
 
@@ -340,7 +343,7 @@ function RescheduleModal({
           )}
           <div className="flex gap-2 pt-1">
             <Button className="flex-1" disabled={!newTime || !newCourt || isSameAsOriginal || submitting} onClick={handleConfirm}>
-              {submitting ? "Rescheduling…" : "Confirm Reschedule"}
+              {submitting ? "Rebooking…" : "Confirm Rebook"}
             </Button>
             <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
           </div>
@@ -598,7 +601,7 @@ function BookingCard({
         <CardContent className="pt-0 flex flex-wrap gap-2 pb-4">
           {reschedulable && (
             <Button variant="outline" size="sm" onClick={() => onReschedule(group.firstBooking)}>
-              Reschedule
+              Rebook
             </Button>
           )}
           {cancellable && (
@@ -619,7 +622,7 @@ function BookingCard({
       {isSingleSlot && !reschedulable && cancellable && (
         <CardContent className="pt-0 pb-3">
           <p className="text-xs text-muted-foreground">
-            Rescheduling unavailable — less than 24 h away.
+            Rebooking unavailable — less than 24 h before slot.
           </p>
         </CardContent>
       )}
@@ -677,8 +680,13 @@ export default function MemberPortal({
     setCancellingIds([]);
   };
 
-  const handleRescheduled = (updated: Booking) => {
-    setBookings((prev) => prev.map((b) => b.id === updated.id ? updated : b));
+  const handleRescheduled = (newBooking: Booking, oldBookingId: string) => {
+    setBookings((prev) => [
+      // Mark the original as cancelled in local state (slot freed)
+      ...prev.map((b) => b.id === oldBookingId ? { ...b, status: "cancelled" } : b),
+      // Add the new booking
+      newBooking,
+    ]);
     setReschedulingBooking(null);
   };
 

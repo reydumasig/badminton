@@ -38,7 +38,8 @@ export default async function AdminPage() {
         .from("bookings")
         .select("*")
         .order("date", { ascending: false })
-        .order("start_time", { ascending: false }),
+        .order("start_time", { ascending: false })
+        .limit(5000),
     ]);
 
   return (
