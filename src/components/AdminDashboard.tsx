@@ -668,8 +668,21 @@ function AdminCalendar({
     try {
       const res  = await fetch("/api/admin/bookings");
       const json = await res.json();
-      if (res.ok) setBookings(json.bookings ?? []);
-    } catch { /* silently ignore network errors */ } finally {
+      if (res.ok && Array.isArray(json.bookings)) {
+        // MERGE — never replace existing bookings with a potentially
+        // incomplete API result. Update status/fields for bookings the
+        // API returned, and add any brand-new ones. Bookings already in
+        // state that the API didn't return (e.g. outside the query window)
+        // are preserved as-is so they never disappear from the calendar.
+        setBookings(prev => {
+          const map = new Map(prev.map(b => [b.id, b]));
+          for (const b of json.bookings as Booking[]) {
+            map.set(b.id, b);
+          }
+          return Array.from(map.values());
+        });
+      }
+    } catch { /* silently ignore network errors — preserves existing state */ } finally {
       setRefreshing(false);
     }
   }, [setBookings]);
