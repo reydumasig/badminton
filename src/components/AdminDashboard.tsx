@@ -662,6 +662,19 @@ function AdminCalendar({
   const [modal, setModal] = useState<ModalState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // ── Hydration-safe "now" ─────────────────────────────────
+  // new Date() in the render loop causes React hydration error #418 because
+  // the server renders at time T and the client hydrates at T+Xms — some
+  // isPastSlot values flip between the two renders, producing mismatched HTML.
+  // Solution: start at 0 (all slots "not past" on server), then update
+  // client-side after mount so server and client agree on the initial render.
+  const [clientNow, setClientNow] = useState<number>(0);
+  useEffect(() => {
+    setClientNow(Date.now());
+    const id = setInterval(() => setClientNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   // ── Live data refresh ────────────────────────────────────
   const refreshBookings = useCallback(async () => {
     setRefreshing(true);
@@ -945,8 +958,10 @@ function AdminCalendar({
               </thead>
               <tbody>
                 {TIME_SLOTS.map((time, rowIdx) => {
-                  const isPastSlot =
-                    new Date(`${selectedDate}T${time}:00`) <= new Date();
+                  // clientNow is 0 during SSR → isPastSlot = false for all slots
+                  // → server and client agree → no React #418 hydration error
+                  const isPastSlot = clientNow > 0
+                    && new Date(`${selectedDate}T${time}:00`).getTime() <= clientNow;
 
                   return (
                     <tr
