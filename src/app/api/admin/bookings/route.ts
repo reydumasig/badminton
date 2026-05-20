@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@/lib/supabase";
-import { bookingMonthRangeISO, BOOKINGS_MONTH_LIMIT } from "@/lib/bookingMonthRange";
+import { fetchBookingsForMonth } from "@/lib/fetchBookingsForMonth";
 
 // ── Auth guard ────────────────────────────────────────────────
 async function verifyAdmin(): Promise<boolean> {
@@ -39,13 +39,13 @@ export async function GET(req: NextRequest) {
     if (!Number.isFinite(year) || year < 2000 || year > 2100 || !Number.isFinite(month) || month < 1 || month > 12) {
       return NextResponse.json({ error: "Invalid year or month." }, { status: 400 });
     }
-    const { start, end } = bookingMonthRangeISO(year, month);
-    query = query
-      .gte("date", start)
-      .lte("date", end)
-      .order("date", { ascending: true })
-      .order("start_time", { ascending: true })
-      .limit(BOOKINGS_MONTH_LIMIT);
+    try {
+      const bookings = await fetchBookingsForMonth(supabase, year, month);
+      return NextResponse.json({ bookings });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to fetch bookings.";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
   } else {
     // List / stats: prefer recent dates first; cap avoids unbounded payloads.
     query = query
