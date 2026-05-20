@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@/lib/supabase";
+import { bookingMonthRangeISO, BOOKINGS_MONTH_LIMIT } from "@/lib/bookingMonthRange";
 
 // ── Auth guard ────────────────────────────────────────────────
 async function verifyAdmin(): Promise<boolean> {
@@ -17,21 +18,41 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
+  const yearParam = searchParams.get("year");
+  const monthParam = searchParams.get("month");
 
   const supabase = createServerClient();
   if (!supabase)
     return NextResponse.json({ error: "Database not configured." }, { status: 503 });
 
-  // Order DESC so upcoming/future bookings are fetched first — if limit is
-  // ever hit, it's better to lose distant-past history than upcoming slots.
-  let query = supabase
-    .from("bookings")
-    .select("*")
-    .order("date", { ascending: false })
-    .order("start_time", { ascending: false })
-    .limit(10000);
+  let query = supabase.from("bookings").select("*");
 
-  if (date) query = query.eq("date", date);
+  if (date) {
+    query = query
+      .eq("date", date)
+      .order("date", { ascending: true })
+      .order("start_time", { ascending: true })
+      .limit(500);
+  } else if (yearParam !== null && monthParam !== null) {
+    const year = parseInt(yearParam, 10);
+    const month = parseInt(monthParam, 10);
+    if (!Number.isFinite(year) || year < 2000 || year > 2100 || !Number.isFinite(month) || month < 1 || month > 12) {
+      return NextResponse.json({ error: "Invalid year or month." }, { status: 400 });
+    }
+    const { start, end } = bookingMonthRangeISO(year, month);
+    query = query
+      .gte("date", start)
+      .lte("date", end)
+      .order("date", { ascending: true })
+      .order("start_time", { ascending: true })
+      .limit(BOOKINGS_MONTH_LIMIT);
+  } else {
+    // List / stats: prefer recent dates first; cap avoids unbounded payloads.
+    query = query
+      .order("date", { ascending: false })
+      .order("start_time", { ascending: false })
+      .limit(200_000);
+  }
 
   const { data, error } = await query;
   if (error)
