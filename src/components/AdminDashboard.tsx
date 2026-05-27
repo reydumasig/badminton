@@ -65,7 +65,8 @@ function formatDate(iso: string) {
 }
 
 function todayString() {
-  return new Date().toISOString().split("T")[0];
+  // Use Philippine time (UTC+8) so "today" never shows as yesterday before 8 AM PH time
+  return new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
 }
 
 // ─── Types ────────────────────────────────────────────────────
@@ -665,16 +666,24 @@ function BookingModal({
 function AdminCalendar({
   bookings,
   setBookings,
+  viewYear,
+  setViewYear,
+  viewMonth,
+  setViewMonth,
+  selectedDate,
+  setSelectedDate,
 }: {
   bookings: Booking[];
   setBookings: React.Dispatch<React.SetStateAction<Booking[]>>;
+  viewYear: number;
+  setViewYear: React.Dispatch<React.SetStateAction<number>>;
+  viewMonth: number;
+  setViewMonth: React.Dispatch<React.SetStateAction<number>>;
+  selectedDate: string;
+  setSelectedDate: React.Dispatch<React.SetStateAction<string>>;
 }) {
   const today = todayString();
-  const now   = new Date();
 
-  const [viewYear,  setViewYear]  = useState(now.getFullYear());
-  const [viewMonth, setViewMonth] = useState(now.getMonth());
-  const [selectedDate, setSelectedDate] = useState<string>(today);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -753,10 +762,11 @@ function AdminCalendar({
     else setViewMonth((m) => m + 1);
   };
   const goToToday = () => {
-    const n = new Date();
-    setViewYear(n.getFullYear());
-    setViewMonth(n.getMonth());
-    setSelectedDate(today);
+    const todayPH = todayString(); // already PH time
+    const [y, m]  = todayPH.split("-").map(Number);
+    setViewYear(y);
+    setViewMonth(m - 1);
+    setSelectedDate(todayPH);
   };
 
   const selectDay = (day: number) => {
@@ -1592,6 +1602,13 @@ export default function AdminDashboard({
     "calendar"
   );
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // Calendar navigation state lives here so tab switches don't reset it
+  const _today = todayString();
+  const [_todayYear, _todayMonth] = _today.split("-").map(Number);
+  const [calViewYear,     setCalViewYear]     = useState(_todayYear);
+  const [calViewMonth,    setCalViewMonth]    = useState(_todayMonth - 1); // 0-based
+  const [calSelectedDate, setCalSelectedDate] = useState<string>(_today);
   const [expandedContact, setExpandedContact] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortBy>("date-asc");
 
@@ -1684,7 +1701,16 @@ export default function AdminDashboard({
 
         {/* ── Calendar tab ──────────────────────────────── */}
         {tab === "calendar" && (
-          <AdminCalendar bookings={bookings} setBookings={setBookings} />
+          <AdminCalendar
+            bookings={bookings}
+            setBookings={setBookings}
+            viewYear={calViewYear}
+            setViewYear={setCalViewYear}
+            viewMonth={calViewMonth}
+            setViewMonth={setCalViewMonth}
+            selectedDate={calSelectedDate}
+            setSelectedDate={setCalSelectedDate}
+          />
         )}
 
         {/* ── Bookings table ────────────────────────────── */}
