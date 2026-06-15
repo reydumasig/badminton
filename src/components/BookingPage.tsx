@@ -52,13 +52,18 @@ function formatDateDisplay(dateStr: string) {
 }
 
 function todayString() {
-  return new Date().toISOString().split("T")[0];
+  // Use Philippine time (UTC+8) so "today" is never yesterday before 8 AM
+  return new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
 }
 
 function maxDateString() {
-  const d = new Date();
-  d.setDate(d.getDate() + 30);
-  return d.toISOString().split("T")[0];
+  // 60 days ahead in Philippine time — gives customers a full 2-month booking horizon
+  const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+  d.setDate(d.getDate() + 60);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function slotKey(court: number, time: string) {
@@ -444,7 +449,7 @@ export default function BookingPage() {
         <div>
           <h2 className="text-xl font-semibold">Select a Date</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            You can book up to 30 days in advance.
+            You can book up to 60 days in advance.
           </p>
         </div>
         <Card className="max-w-sm">
